@@ -1,6 +1,7 @@
 # Feature store materializer — computes offline (point-in-time) and online
-# (latest) features from ClickHouse aggregates. Run on a schedule by Airflow
-# or as a long-running refresher. Code lands in ./feature-store (ML phase).
+# (latest) features in ClickHouse. Run as a long-running refresher (compose
+# `ml` profile) or scheduled by Airflow. Code is the ./feature_store package
+# (Phase 6); its modules use flat imports, so contents land directly on /app.
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
@@ -11,7 +12,7 @@ WORKDIR /app
 COPY docker/feature-store/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY feature-store/ /app/feature_store/
+COPY feature_store/ /app/
 COPY docker/feature-store/startup.sh /startup.sh
 RUN chmod +x /startup.sh
 
@@ -20,4 +21,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
     CMD curl -sf http://localhost:9000/metrics || exit 1
 
 ENTRYPOINT ["/startup.sh"]
-CMD ["python", "-m", "feature_store.refresh", "--loop"]
+CMD ["python", "-m", "refresh", "--loop"]

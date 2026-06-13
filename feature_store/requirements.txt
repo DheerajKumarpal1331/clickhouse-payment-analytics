@@ -1,0 +1,2 @@
+prometheus-client==0.20.0
+# ClickHouse access uses stdlib urllib (clickhouse_client.py) — no driver needed.
