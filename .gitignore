@@ -18,3 +18,8 @@ data/
 
 # Kafka producer cursor state
 .kafka_offsets.json
+
+# MLflow local artifacts
+mlruns/
+mlartifacts/
+*.db
