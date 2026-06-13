@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Generated data (use the generator / loaders to recreate)
+data/
+*.parquet
+
+# Env / secrets
+.env
+*.local

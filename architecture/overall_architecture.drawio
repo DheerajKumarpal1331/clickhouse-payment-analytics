@@ -1,0 +1,121 @@
+<mxfile host="app.diagrams.net" agent="payment-platform" version="24.0.0">
+  <diagram name="Overall Architecture" id="overall-arch">
+    <mxGraphModel dx="1422" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="ClickHouse Payment Analytics Platform — Overall Architecture" style="text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="120" y="20" width="860" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER 1: Edge / Ingestion ============ -->
+        <mxCell id="band-edge" value="EDGE / INGESTION" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="980" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="pos" value="POS Devices&#10;(Android SmartPOS,&#10;Soundbox QR, mPOS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="90" y="100" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mobile" value="Merchant / Customer&#10;Mobile Apps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="300" y="100" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ecom" value="E-commerce&#10;Checkout / Payment Links" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="510" y="100" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="acq" value="Acquirer / Card Networks / NPCI&#10;(external auth rails)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="100" width="290" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER 2: API ============ -->
+        <mxCell id="band-api" value="API LAYER" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="210" width="980" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="gateway" value="Payment Gateway API (FastAPI)&#10;auth · capture · refund · merchant · device" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="120" y="240" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fraudapi" value="Fraud Scoring API (FastAPI)&#10;POST /score · GET /features · /model-info&#10;target &lt; 100 ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="600" y="240" width="380" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER 3: OLTP ============ -->
+        <mxCell id="band-oltp" value="OLTP — SYSTEM OF RECORD" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontStyle=1;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="340" width="465" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="pg" value="PostgreSQL&#10;(3NF, monthly-partitioned txns)&#10;merchant · device · customer · txn&#10;settlement · refund · chargeback&#10;fraud · support" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="90" y="370" width="405" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER 3b: Streaming ============ -->
+        <mxCell id="band-kafka" value="EVENT STREAMING" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontStyle=1;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="575" y="340" width="465" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="kafka" value="Apache Kafka&#10;transaction · refund · chargeback&#10;settlement · fraud · support&#10;merchant · device events&#10;+ Schema Registry · DLQ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="605" y="370" width="405" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER 4: OLAP ============ -->
+        <mxCell id="band-olap" value="OLAP — ANALYTICS WAREHOUSE" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="490" width="980" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ch" value="ClickHouse&#10;fact_transactions / refunds / chargebacks / settlements&#10;fraud / support / device / merchant events&#10;8 dimensions · MergeTree + ReplacingMergeTree" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="90" y="520" width="460" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="mv" value="Materialized Views (AggregatingMergeTree)&#10;merchant hourly/daily/monthly · velocity 5m&#10;fraud features · settlement perf · revenue&#10;device health · risk summaries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="580" y="520" width="430" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER 5: Feature Store + ML ============ -->
+        <mxCell id="band-ml" value="FEATURE STORE + ML / MLOps" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontStyle=1;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="650" width="980" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="fs" value="Feature Store&#10;offline (point-in-time) · online (latest)&#10;merchant · customer · device · fraud features" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="90" y="680" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ml" value="Fraud Models&#10;XGBoost · LightGBM · RandomForest&#10;SHAP explainability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="410" y="680" width="290" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="mlflow" value="MLflow&#10;experiment tracking ·&#10;model registry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="720" y="680" width="290" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ============ LAYER 6: Consumption ============ -->
+        <mxCell id="band-bi" value="CONSUMPTION" style="rounded=1;fillColor=#d4e1f5;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="810" width="980" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="dash" value="Plotly Dash&#10;Executive · Merchant · Risk/Fraud&#10;Operations · Settlement · Support" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="90" y="840" width="420" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="users" value="Business Users&#10;exec · risk ops · merchant ops · support · finance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="590" y="840" width="420" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ============ CROSS-CUTTING: Orchestration + Monitoring ============ -->
+        <mxCell id="airflow" value="Apache Airflow&#10;ETL · backfill · feature gen&#10;model retraining · DQ · monitoring DAGs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fad7ac;strokeColor=#b46504;" vertex="1" parent="1">
+          <mxGeometry x="60" y="960" width="470" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mon" value="Prometheus + Grafana&#10;Kafka lag · API latency · CH query time&#10;model latency · Airflow failures · alert rules" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fad7ac;strokeColor=#b46504;" vertex="1" parent="1">
+          <mxGeometry x="570" y="960" width="470" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ============ EDGES ============ -->
+        <mxCell id="e1" style="endArrow=block;html=1;strokeColor=#333333;" edge="1" parent="1" source="pos" target="gateway"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="endArrow=block;html=1;strokeColor=#333333;" edge="1" parent="1" source="mobile" target="gateway"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="endArrow=block;html=1;strokeColor=#333333;" edge="1" parent="1" source="ecom" target="gateway"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="endArrow=block;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="gateway" target="acq"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="writes" style="endArrow=block;html=1;strokeColor=#d79b00;" edge="1" parent="1" source="gateway" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="CDC / event publish" style="endArrow=block;html=1;strokeColor=#d6b656;" edge="1" parent="1" source="pg" target="kafka"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="stream consume" style="endArrow=block;html=1;strokeColor=#9673a6;" edge="1" parent="1" source="kafka" target="ch"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="auto-aggregate" style="endArrow=block;html=1;strokeColor=#9673a6;" edge="1" parent="1" source="ch" target="mv"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="feature compute" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="mv" target="fs"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="train" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="fs" target="ml"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="ml" target="mlflow"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" value="online features" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="fs" target="fraudapi"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" value="serves" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="mlflow" target="fraudapi"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" value="query" style="endArrow=block;html=1;strokeColor=#6c8ebf;" edge="1" parent="1" source="mv" target="dash"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" style="endArrow=block;html=1;strokeColor=#6c8ebf;" edge="1" parent="1" source="dash" target="users"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" value="score" style="endArrow=block;html=1;dashed=1;strokeColor=#82b366;" edge="1" parent="1" source="gateway" target="fraudapi"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

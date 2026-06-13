@@ -1,0 +1,2 @@
+pyarrow>=14.0
+confluent-kafka>=2.3   # only needed for `generate.py stream`
