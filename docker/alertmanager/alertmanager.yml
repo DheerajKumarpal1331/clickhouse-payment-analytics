@@ -1,0 +1,27 @@
+# Alertmanager — dev routing. In prod, wire receivers to Slack / PagerDuty /
+# email via secrets-managed webhook URLs (see deployment/).
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [ 'severity="critical"' ]
+      receiver: critical
+      repeat_interval: 1h
+
+receivers:
+  - name: default
+    # dev: no-op sink. Replace with a real webhook in qa/prod.
+  - name: critical
+    # webhook_configs:
+    #   - url: 'https://hooks.slack.com/services/REPLACE/ME'
+
+inhibit_rules:
+  - source_matchers: [ 'severity="critical"' ]
+    target_matchers: [ 'severity="warning"' ]
+    equal: ['alertname']

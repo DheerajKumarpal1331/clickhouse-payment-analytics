@@ -1,0 +1,43 @@
+{
+  "uid": "clickhouse-olap",
+  "title": "ClickHouse",
+  "tags": ["platform", "clickhouse"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Running queries",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "expr": "ClickHouseMetrics_Query" } ]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Selects / Inserts per sec",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "rate(ClickHouseProfileEvents_Query[5m])", "legendFormat": "queries" },
+        { "refId": "B", "expr": "rate(ClickHouseProfileEvents_InsertedRows[5m])", "legendFormat": "inserted rows" }
+      ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Merge operations (background)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "ClickHouseMetrics_BackgroundMergesAndMutationsPoolTask", "legendFormat": "active merges" },
+        { "refId": "B", "expr": "rate(ClickHouseProfileEvents_MergedRows[5m])", "legendFormat": "merged rows/s" }
+      ]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Max parts per partition",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "expr": "ClickHouseAsyncMetrics_MaxPartCountForPartition" } ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# Fraud serving — loads the registered model from MLflow and serves scores.
+# (The public scoring API is fraud-api; this container can host the model
+# behind it or run mlflow models serve.)
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY docker/ml/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ml/ /app/ml/
+COPY docker/ml/startup.sh /startup.sh
+RUN chmod +x /startup.sh
+
+EXPOSE 8500
+HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=5 \
+    CMD curl -sf http://localhost:8500/health || exit 1
+
+ENTRYPOINT ["/startup.sh"]
+CMD ["python", "-m", "ml.serve"]

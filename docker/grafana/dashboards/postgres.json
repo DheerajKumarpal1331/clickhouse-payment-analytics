@@ -1,0 +1,41 @@
+{
+  "uid": "postgres-oltp",
+  "title": "PostgreSQL",
+  "tags": ["platform", "postgres"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Active connections by db",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A",
+        "expr": "sum(pg_stat_activity_count) by (datname)", "legendFormat": "{{datname}}" } ]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Max connections",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "expr": "pg_settings_max_connections" } ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Commits / s",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "expr": "sum(rate(pg_stat_database_xact_commit[5m]))" } ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Tuples returned/fetched (query load)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(pg_stat_database_tup_returned[5m]))", "legendFormat": "returned" },
+        { "refId": "B", "expr": "sum(rate(pg_stat_database_tup_fetched[5m]))", "legendFormat": "fetched" }
+      ]
+    }
+  ]
+}

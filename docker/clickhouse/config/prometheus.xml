@@ -1,0 +1,12 @@
+<!-- Expose ClickHouse internal metrics for Prometheus on :9363/metrics.
+     Scraped by docker/prometheus/prometheus.yml (job: clickhouse). -->
+<clickhouse>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <status_info>true</status_info>
+    </prometheus>
+</clickhouse>
