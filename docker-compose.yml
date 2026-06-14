@@ -342,7 +342,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
     environment:
-      SERVICE: merchant_api
+      SERVICE: merchant_service
       PG_DSN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     ports: ["${MERCHANT_API_PORT:-8001}:8000"]
     networks: [payments-net]
@@ -355,7 +355,7 @@ services:
     depends_on:
       clickhouse: {condition: service_healthy}
     environment:
-      SERVICE: analytics_api
+      SERVICE: analytics_service
       CH_URL: http://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse:8123
     ports: ["${ANALYTICS_API_PORT:-8002}:8000"]
     networks: [payments-net]
@@ -369,7 +369,7 @@ services:
       clickhouse: {condition: service_healthy}
       mlflow: {condition: service_healthy}
     environment:
-      SERVICE: fraud_api
+      SERVICE: fraud_service
       CH_URL: http://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse:8123
       MLFLOW_TRACKING_URI: http://mlflow:5000
     ports: ["${FRAUD_API_PORT:-8003}:8000"]

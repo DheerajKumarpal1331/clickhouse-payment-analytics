@@ -11,8 +11,10 @@ WORKDIR /app
 COPY docker/api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application code lands in ./api (delivered in the API phase).
+# Application code. fraud_service reuses the model's feature contract from ml/,
+# so ml/ ships in the image too (no retraining deps pulled at import time).
 COPY api/ /app/api/
+COPY ml/ /app/ml/
 COPY docker/api/startup.sh /startup.sh
 RUN chmod +x /startup.sh
 
