@@ -4,7 +4,17 @@ Prometheus + Alertmanager + Grafana give the platform its observability plane.
 Prometheus scrapes every layer, alert rules page on the four things that hurt
 most in a payments stack — **Kafka lag, API latency, ClickHouse queries, Airflow
 health** — and Grafana turns the time series (plus direct warehouse/OLTP queries)
-into three operator-facing dashboards.
+into operator-facing dashboards.
+
+**Grafana — Platform Health** (scrape targets, API latency/throughput by route,
+fraud-path SLA, Kafka lag, ClickHouse queries):
+
+![Grafana Platform Health](screenshots/grafana.png)
+
+**Prometheus — scrape targets** (all layers healthy: API, ClickHouse, Kafka,
+Postgres, Airflow statsd-exporter):
+
+![Prometheus targets](screenshots/prometheus.png)
 
 ## Layout
 

@@ -4,6 +4,10 @@ Production ML pipeline: build velocity features from ClickHouse → train three
 models → evaluate on a leakage-free time split → track in MLflow → register the
 best to the model registry → serve the champion.
 
+**MLflow — experiment tracking & model registry:**
+
+![MLflow](screenshots/mlflow.png)
+
 ## Models
 
 `random_forest` (sklearn), `xgboost`, `lightgbm`. XGBoost/LightGBM are imported

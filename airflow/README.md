@@ -1,10 +1,12 @@
 # Airflow Orchestration (Phase 10)
 
-Apache Airflow (CeleryExecutor) schedules the platform's batch plane: it keeps
+Apache Airflow (LocalExecutor) schedules the platform's batch plane: it keeps
 the ClickHouse warehouse (Phase 5) converged from the PostgreSQL OLTP (Phase 2)
 via watermark CDC, refreshes the feature store (Phase 6), retrains the fraud
 model (Phase 7), and enforces data-quality contracts — the scheduled,
 gap-filling complement to the Kafka streaming path (Phase 4).
+
+![Airflow DAGs](screenshots/airflow.png)
 
 ## DAGs
 
