@@ -22,6 +22,7 @@ T+1 settlement). Built phase by phase — this repo currently covers
 | **9 — Dashboards** | 5 Plotly Dash operator dashboards | [`dashboard/`](dashboard/) |
 | **10 — Orchestration** | 8 Airflow DAGs, custom operators/sensors, watermark CDC | [`airflow/`](airflow/) |
 | **11 — Monitoring** | Prometheus + Alertmanager + Grafana; Kafka lag / API latency / ClickHouse / Airflow | [`monitoring/`](monitoring/) |
+| **12 — Testing** | Unit (ETL/API/ML), integration (PG→Kafka, Kafka→CH, FS→Model), load (5000 ev/s, 100 users) | [`tests/`](tests/) |
 
 ## Quick start — one command
 
@@ -78,3 +79,9 @@ python data_generator/generate.py historical \
   datasources (Prometheus/ClickHouse/Postgres health OK) and seven dashboards,
   and every Data-Freshness / ML-Monitoring SQL runs against the live schema.
   See [`monitoring/README.md`](monitoring/README.md).
+- **Phase 12** — **39 unit tests pass** (ETL/API/ML, no infra); all **9
+  integration tests pass** live against the Docker stack (PostgreSQL→Kafka
+  round-trip + cursor advance, Kafka→ClickHouse sink + DLQ round-trip, Feature
+  Store→Model scoring); load tests validated — Kafka ingest sustained
+  **166k events/sec** (target 5000) and **100 concurrent users with 0 failures**
+  on the fraud-scoring API. See [`tests/README.md`](tests/README.md).

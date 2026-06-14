@@ -1,0 +1,8 @@
+# Test tooling. The platform packages themselves are imported from the repo
+# (install each module's own requirements/ run inside its container for the
+# integration suite). These are the extras the tests need.
+pytest==8.2.2
+httpx==0.27.0           # FastAPI TestClient + API load probes
+locust==2.29.1          # load test: 100 concurrent users
+confluent-kafka==2.4.0  # integration: produce/consume + 5000 ev/s benchmark
+psycopg2-binary==2.9.9  # integration: Postgres -> Kafka source
