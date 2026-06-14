@@ -1,0 +1,111 @@
+# Default values for the payment-analytics chart.
+# Override per environment: `helm install payments ./helm/payment-analytics -f my-values.yaml`.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Image registry/repository defaults. Built images (api/dashboard/mlflow) come
+# from docker/ in this repo; push them to `image.registry` first.
+image:
+  registry: payment-analytics      # <registry>/<name>:<tag>
+  pullPolicy: IfNotPresent
+  tag: latest
+
+# ---- secrets ---------------------------------------------------------------
+# For real deployments, set `secrets.create: false` and reference an existing
+# Secret managed by External Secrets / Sealed Secrets / Vault.
+secrets:
+  create: true
+  existingSecret: ""               # name of a pre-created Secret (overrides create)
+  postgresUser: payments
+  postgresPassword: change-me-postgres
+  clickhouseUser: analytics
+  clickhousePassword: change-me-clickhouse
+  grafanaAdminPassword: change-me-grafana
+
+# ---- shared config ---------------------------------------------------------
+config:
+  postgresDb: payments
+  chDb: payments
+  kafkaBootstrap: kafka:9092
+  mlflowTrackingUri: http://mlflow:5000
+
+# ---- stateful stores -------------------------------------------------------
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  storage: 10Gi
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
+clickhouse:
+  enabled: true
+  image: clickhouse/clickhouse-server:24.3-alpine
+  storage: 20Gi
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "2", memory: 4Gi}
+
+kafka:
+  enabled: true
+  image: confluentinc/cp-kafka:7.6.1
+  zookeeperImage: confluentinc/cp-zookeeper:7.6.1
+  storage: 10Gi
+
+# ---- ML / tracking ---------------------------------------------------------
+mlflow:
+  enabled: true
+  image: ""                        # defaults to <registry>/mlflow:<tag>
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+# ---- application APIs (one image, SERVICE env selects the app) --------------
+apis:
+  - name: merchant-api
+    service: merchant_service
+    replicas: 2
+    env: [{name: PG_DSN, secretKey: pgDsn}]
+  - name: analytics-api
+    service: analytics_service
+    replicas: 2
+    env: [{name: CH_URL, secretKey: chUrl}]
+  - name: fraud-api
+    service: fraud_service
+    replicas: 3
+    env:
+      - {name: CH_URL, secretKey: chUrl}
+      - {name: MLFLOW_TRACKING_URI, configKey: MLFLOW_TRACKING_URI}
+    hpa:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 12
+      targetCPUUtilizationPercentage: 65
+
+apiResources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+# ---- dashboard -------------------------------------------------------------
+dashboard:
+  enabled: true
+  image: ""                        # defaults to <registry>/dashboard:<tag>
+  replicas: 1
+
+# ---- orchestration (minimal; prod = official Airflow chart) ----------------
+airflow:
+  enabled: false
+  image: apache/airflow:2.9.3
+
+# ---- monitoring (minimal; prod = kube-prometheus-stack) --------------------
+monitoring:
+  enabled: true
+  prometheusImage: prom/prometheus:v2.53.0
+  grafanaImage: grafana/grafana:11.1.0
+
+# ---- ingress ---------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  hostSuffix: payments.local       # <app>.<hostSuffix>

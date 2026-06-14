@@ -1,0 +1,58 @@
+# ClickHouse OLAP warehouse. Single-node StatefulSet here; in production use the
+# Altinity ClickHouse Operator for a sharded + replicated cluster with
+# Distributed tables keyed by cityHash64(merchant_id).
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: payments
+  labels: {app: clickhouse}
+spec:
+  clusterIP: None
+  selector: {app: clickhouse}
+  ports:
+    - {name: http, port: 8123, targetPort: 8123}
+    - {name: native, port: 9000, targetPort: 9000}
+    - {name: metrics, port: 9363, targetPort: 9363}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: payments
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector: {matchLabels: {app: clickhouse}}
+  template:
+    metadata: {labels: {app: clickhouse}}
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:24.3-alpine
+          ports:
+            - {containerPort: 8123}
+            - {containerPort: 9000}
+            - {containerPort: 9363}
+          env:
+            - {name: CLICKHOUSE_DB, valueFrom: {configMapKeyRef: {name: platform-config, key: CH_DB}}}
+            - {name: CLICKHOUSE_USER, valueFrom: {secretKeyRef: {name: platform-secrets, key: CLICKHOUSE_USER}}}
+            - {name: CLICKHOUSE_PASSWORD, valueFrom: {secretKeyRef: {name: platform-secrets, key: CLICKHOUSE_PASSWORD}}}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/clickhouse}
+          readinessProbe:
+            httpGet: {path: /ping, port: 8123}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /ping, port: 8123}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: {cpu: "500m", memory: 1Gi}
+            limits: {cpu: "2", memory: 4Gi}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: 20Gi}}

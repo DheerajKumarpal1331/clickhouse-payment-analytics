@@ -1,0 +1,10 @@
+apiVersion: v2
+name: payment-analytics
+description: Production-grade FinTech payment processing & analytics platform (UPI/NPCI, RBI MDR/GST, T+1 settlement) — Postgres OLTP, Kafka streaming, ClickHouse OLAP, feature store, fraud ML, FastAPI, Dash, Airflow, Prometheus/Grafana.
+type: application
+version: 0.1.0          # chart version
+appVersion: "1.0"      # platform version
+keywords: [payments, fintech, clickhouse, kafka, fraud, mlops]
+maintainers:
+  - name: Dheeraj Kumar Pal
+home: https://github.com/DheerajKumarpal1331/clickhouse-payment-analytics

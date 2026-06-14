@@ -1,0 +1,32 @@
+# External access. Assumes an ingress controller (nginx) is installed. Swap the
+# host suffix for your domain and add TLS (cert-manager) in production.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payments
+  namespace: payments
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: fraud.payments.local
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: fraud-api, port: {number: 8000}}}}
+    - host: merchant.payments.local
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: merchant-api, port: {number: 8000}}}}
+    - host: analytics.payments.local
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: analytics-api, port: {number: 8000}}}}
+    - host: dashboard.payments.local
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: dashboard, port: {number: 8050}}}}
+    - host: grafana.payments.local
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: grafana, port: {number: 3000}}}}

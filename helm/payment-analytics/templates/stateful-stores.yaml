@@ -1,0 +1,173 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {app: postgres}
+  ports: [{name: pg, port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports: [{containerPort: 5432}]
+          env:
+            - {name: POSTGRES_DB, valueFrom: {configMapKeyRef: {name: platform-config, key: POSTGRES_DB}}}
+            - {name: POSTGRES_USER, valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" . }}, key: POSTGRES_USER}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" . }}, key: POSTGRES_PASSWORD}}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", {{ .Values.secrets.postgresUser | quote }}]}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources: {{- toYaml .Values.postgres.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: {{ .Values.postgres.storage }}}}
+{{- end }}
+{{- if .Values.clickhouse.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {app: clickhouse}
+  ports:
+    - {name: http, port: 8123, targetPort: 8123}
+    - {name: native, port: 9000, targetPort: 9000}
+    - {name: metrics, port: 9363, targetPort: 9363}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector: {matchLabels: {app: clickhouse}}
+  template:
+    metadata: {labels: {app: clickhouse}}
+    spec:
+      containers:
+        - name: clickhouse
+          image: {{ .Values.clickhouse.image }}
+          ports: [{containerPort: 8123}, {containerPort: 9000}, {containerPort: 9363}]
+          env:
+            - {name: CLICKHOUSE_DB, valueFrom: {configMapKeyRef: {name: platform-config, key: CH_DB}}}
+            - {name: CLICKHOUSE_USER, valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" . }}, key: CLICKHOUSE_USER}}}
+            - {name: CLICKHOUSE_PASSWORD, valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" . }}, key: CLICKHOUSE_PASSWORD}}}
+          volumeMounts: [{name: data, mountPath: /var/lib/clickhouse}]
+          readinessProbe:
+            httpGet: {path: /ping, port: 8123}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources: {{- toYaml .Values.clickhouse.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: {{ .Values.clickhouse.storage }}}}
+{{- end }}
+{{- if .Values.kafka.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {app: zookeeper}
+  ports: [{name: client, port: 2181, targetPort: 2181}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  serviceName: zookeeper
+  replicas: 1
+  selector: {matchLabels: {app: zookeeper}}
+  template:
+    metadata: {labels: {app: zookeeper}}
+    spec:
+      containers:
+        - name: zookeeper
+          image: {{ .Values.kafka.zookeeperImage }}
+          ports: [{containerPort: 2181}]
+          env:
+            - {name: ZOOKEEPER_CLIENT_PORT, value: "2181"}
+            - {name: ZOOKEEPER_TICK_TIME, value: "2000"}
+          volumeMounts: [{name: data, mountPath: /var/lib/zookeeper/data}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {app: kafka}
+  ports: [{name: broker, port: 9092, targetPort: 9092}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector: {matchLabels: {app: kafka}}
+  template:
+    metadata: {labels: {app: kafka}}
+    spec:
+      containers:
+        - name: kafka
+          image: {{ .Values.kafka.image }}
+          ports: [{containerPort: 9092}]
+          env:
+            - {name: KAFKA_BROKER_ID, value: "1"}
+            - {name: KAFKA_ZOOKEEPER_CONNECT, value: "zookeeper:2181"}
+            - {name: KAFKA_ADVERTISED_LISTENERS, value: "PLAINTEXT://kafka:9092"}
+            - {name: KAFKA_LISTENERS, value: "PLAINTEXT://0.0.0.0:9092"}
+            - {name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "false"}
+          volumeMounts: [{name: data, mountPath: /var/lib/kafka/data}]
+          readinessProbe:
+            tcpSocket: {port: 9092}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: {{ .Values.kafka.storage }}}}
+{{- end }}

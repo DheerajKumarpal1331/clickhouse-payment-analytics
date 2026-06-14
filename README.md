@@ -23,6 +23,7 @@ T+1 settlement). Built phase by phase — this repo currently covers
 | **10 — Orchestration** | 8 Airflow DAGs, custom operators/sensors, watermark CDC | [`airflow/`](airflow/) |
 | **11 — Monitoring** | Prometheus + Alertmanager + Grafana; Kafka lag / API latency / ClickHouse / Airflow | [`monitoring/`](monitoring/) |
 | **12 — Testing** | Unit (ETL/API/ML), integration (PG→Kafka, Kafka→CH, FS→Model), load (5000 ev/s, 100 users) | [`tests/`](tests/) |
+| **13 — Deployment** | Full Docker Compose stack + optional Kubernetes (raw manifests + Helm chart) | [`deployment/`](deployment/), [`k8s/`](k8s/), [`helm/`](helm/) |
 
 ## Quick start — one command
 
@@ -85,3 +86,7 @@ python data_generator/generate.py historical \
   Store→Model scoring); load tests validated — Kafka ingest sustained
   **166k events/sec** (target 5000) and **100 concurrent users with 0 failures**
   on the fraud-scoring API. See [`tests/README.md`](tests/README.md).
+- **Phase 13** — deployment artifacts validated: the raw manifests render via
+  `kubectl kustomize` to **32 resources**, and the Helm chart passes `helm lint`
+  and `helm template` (**27 resources**, with the fraud-api HPA and the
+  external-Secret toggle exercised). See [`deployment/README.md`](deployment/README.md).

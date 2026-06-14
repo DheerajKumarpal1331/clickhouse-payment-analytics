@@ -16,6 +16,9 @@ data/
 .env
 *.local
 
+# Kubernetes secret (create from k8s/02-secret.example.yaml; never commit)
+k8s/02-secret.yaml
+
 # Kafka producer cursor state
 .kafka_offsets.json
 

@@ -1,0 +1,23 @@
+# `kubectl apply -k k8s/` applies the whole platform in order. Copy
+# 02-secret.example.yaml -> 02-secret.yaml (gitignored) and fill it in first.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: payments
+
+commonLabels:
+  app.kubernetes.io/part-of: payment-analytics
+
+resources:
+  - 00-namespace.yaml
+  - 01-config.yaml
+  - 02-secret.yaml        # create from 02-secret.example.yaml (not committed)
+  - 10-postgres.yaml
+  - 11-clickhouse.yaml
+  - 12-kafka.yaml
+  - 20-mlflow.yaml
+  - 30-apis.yaml
+  - 31-dashboard.yaml
+  - 40-airflow.yaml
+  - 50-monitoring.yaml
+  - 60-ingress.yaml

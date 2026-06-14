@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  labels: {{- include "pa.labels" . | nindent 4 }}
+data:
+  POSTGRES_DB: {{ .Values.config.postgresDb | quote }}
+  CH_DB: {{ .Values.config.chDb | quote }}
+  KAFKA_BOOTSTRAP: {{ .Values.config.kafkaBootstrap | quote }}
+  MLFLOW_TRACKING_URI: {{ .Values.config.mlflowTrackingUri | quote }}
+  ANALYTICS_API: "http://analytics-api:8000"

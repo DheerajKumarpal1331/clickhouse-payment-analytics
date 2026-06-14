@@ -1,0 +1,39 @@
+# MLflow tracking + model registry. Image built from docker/mlflow and pushed to
+# your registry. In production back it with Postgres metadata + S3/GCS artifacts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: payments
+  labels: {app: mlflow}
+spec:
+  selector: {app: mlflow}
+  ports: [{name: http, port: 5000, targetPort: 5000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: payments
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: mlflow}}
+  template:
+    metadata: {labels: {app: mlflow}}
+    spec:
+      containers:
+        - name: mlflow
+          image: payment-analytics/mlflow:latest   # built from docker/mlflow
+          ports: [{containerPort: 5000}]
+          env:
+            - name: BACKEND_STORE_URI
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/mlflow
+            - {name: POSTGRES_USER, valueFrom: {secretKeyRef: {name: platform-secrets, key: POSTGRES_USER}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: platform-secrets, key: POSTGRES_PASSWORD}}}
+          readinessProbe:
+            httpGet: {path: /health, port: 5000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: "100m", memory: 256Mi}
+            limits: {cpu: "500m", memory: 512Mi}

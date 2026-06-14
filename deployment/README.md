@@ -54,9 +54,25 @@ Compose is for local/QA. For production this maps to Kubernetes:
 - **Airflow** → KubernetesExecutor; **MLflow** artifacts → S3/GCS.
 - **Observability** → Prometheus Operator + Grafana; Alertmanager → PagerDuty/Slack.
 
-A Helm chart / kustomize overlays per environment are the next step; the
-compose service definitions and env files are the source of truth they derive
-from.
+### Kubernetes artifacts (Phase 13)
+
+Both deployment paths now exist, derived from the same compose service
+definitions:
+
+- **[`k8s/`](../k8s/)** — raw manifests, `kubectl apply -k k8s/`. Namespace,
+  ConfigMap/Secret, Postgres/ClickHouse/Kafka/ZooKeeper `StatefulSet`s, MLflow,
+  the three FastAPI `Deployment`s (+ fraud-api `HPA` 3→12), Dash, a minimal
+  Airflow, Prometheus/Grafana, and an `Ingress`. Validated: `kubectl kustomize`
+  renders 32 resources.
+- **[`helm/payment-analytics`](../helm/)** — the same topology as one
+  values-driven chart (`helm install payments ./helm/payment-analytics`).
+  Per-component `enabled` toggles, an `apis[]` list (each with optional `hpa`),
+  chart-managed or external Secret. Validated: `helm lint` clean, `helm template`
+  renders 27 resources.
+
+For production, disable the bundled stateful stores and use managed services /
+operators (the swaps above); the chart and manifests stay the deployment
+surface, the stores move underneath them.
 
 ## Operations
 

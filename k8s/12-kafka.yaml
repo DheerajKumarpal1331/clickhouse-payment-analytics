@@ -1,0 +1,94 @@
+# Kafka + ZooKeeper. Single-broker StatefulSets for a self-hosted cluster.
+# In production use the Strimzi operator (or managed MSK / Confluent Cloud) with
+# a 3-broker StatefulSet, KAFKA replication factor 3, and 12+ partitions on
+# transaction_events.
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: payments
+  labels: {app: zookeeper}
+spec:
+  clusterIP: None
+  selector: {app: zookeeper}
+  ports: [{name: client, port: 2181, targetPort: 2181}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  namespace: payments
+spec:
+  serviceName: zookeeper
+  replicas: 1
+  selector: {matchLabels: {app: zookeeper}}
+  template:
+    metadata: {labels: {app: zookeeper}}
+    spec:
+      containers:
+        - name: zookeeper
+          image: confluentinc/cp-zookeeper:7.6.1
+          ports: [{containerPort: 2181}]
+          env:
+            - {name: ZOOKEEPER_CLIENT_PORT, value: "2181"}
+            - {name: ZOOKEEPER_TICK_TIME, value: "2000"}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/zookeeper/data}
+          resources:
+            requests: {cpu: "100m", memory: 256Mi}
+            limits: {cpu: "500m", memory: 512Mi}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: payments
+  labels: {app: kafka}
+spec:
+  clusterIP: None
+  selector: {app: kafka}
+  ports: [{name: broker, port: 9092, targetPort: 9092}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: payments
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector: {matchLabels: {app: kafka}}
+  template:
+    metadata: {labels: {app: kafka}}
+    spec:
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.6.1
+          ports: [{containerPort: 9092}]
+          env:
+            - {name: KAFKA_BROKER_ID, value: "1"}
+            - {name: KAFKA_ZOOKEEPER_CONNECT, value: "zookeeper:2181"}
+            # advertise the in-cluster Service DNS so other pods can reach the broker
+            - {name: KAFKA_ADVERTISED_LISTENERS, value: "PLAINTEXT://kafka:9092"}
+            - {name: KAFKA_LISTENERS, value: "PLAINTEXT://0.0.0.0:9092"}
+            - {name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "false"}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/kafka/data}
+          readinessProbe:
+            tcpSocket: {port: 9092}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "500m", memory: 1Gi}
+            limits: {cpu: "2", memory: 2Gi}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: 10Gi}}

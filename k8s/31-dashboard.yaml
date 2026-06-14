@@ -1,0 +1,26 @@
+# Plotly Dash operator dashboard. Image built from docker/dashboard.
+apiVersion: v1
+kind: Service
+metadata: {name: dashboard, namespace: payments, labels: {app: dashboard}}
+spec:
+  selector: {app: dashboard}
+  ports: [{name: http, port: 8050, targetPort: 8050}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: dashboard, namespace: payments}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: dashboard}}
+  template:
+    metadata: {labels: {app: dashboard}}
+    spec:
+      containers:
+        - name: dashboard
+          image: payment-analytics/dashboard:latest
+          ports: [{containerPort: 8050}]
+          env:
+            - {name: CH_URL, valueFrom: {secretKeyRef: {name: platform-secrets, key: CH_URL}}}
+            - {name: ANALYTICS_API, valueFrom: {configMapKeyRef: {name: platform-config, key: ANALYTICS_API}}}
+          readinessProbe: {httpGet: {path: /, port: 8050}, initialDelaySeconds: 10, periodSeconds: 15}
+          resources: {requests: {cpu: "100m", memory: 256Mi}, limits: {cpu: "500m", memory: 512Mi}}

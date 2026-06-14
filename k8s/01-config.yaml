@@ -1,0 +1,19 @@
+# Non-secret configuration shared across the platform. Service hostnames are the
+# in-cluster Service DNS names (<service>.payments.svc.cluster.local, short form
+# works within the namespace). Secrets (passwords) live in 02-secret.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: payments
+data:
+  POSTGRES_DB: payments
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  CLICKHOUSE_HOST: clickhouse
+  CLICKHOUSE_HTTP_PORT: "8123"
+  CLICKHOUSE_NATIVE_PORT: "9000"
+  CH_DB: payments
+  KAFKA_BOOTSTRAP: kafka:9092
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  ANALYTICS_API: http://analytics-api:8000

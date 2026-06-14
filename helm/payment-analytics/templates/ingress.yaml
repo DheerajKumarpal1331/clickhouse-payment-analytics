@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payments
+  labels: {{- include "pa.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: fraud.{{ .Values.ingress.hostSuffix }}
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: fraud-api, port: {number: 8000}}}}
+    - host: merchant.{{ .Values.ingress.hostSuffix }}
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: merchant-api, port: {number: 8000}}}}
+    - host: analytics.{{ .Values.ingress.hostSuffix }}
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: analytics-api, port: {number: 8000}}}}
+    - host: dashboard.{{ .Values.ingress.hostSuffix }}
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: dashboard, port: {number: 8050}}}}
+{{- if .Values.monitoring.enabled }}
+    - host: grafana.{{ .Values.ingress.hostSuffix }}
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: grafana, port: {number: 3000}}}}
+{{- end }}
+{{- end }}

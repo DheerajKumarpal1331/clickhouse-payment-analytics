@@ -1,0 +1,116 @@
+{{- if .Values.mlflow.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  selector: {app: mlflow}
+  ports: [{name: http, port: 5000, targetPort: 5000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: mlflow}}
+  template:
+    metadata: {labels: {app: mlflow}}
+    spec:
+      containers:
+        - name: mlflow
+          image: {{ include "pa.image" (list .Values.mlflow.image "mlflow" .) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{containerPort: 5000}]
+          env:
+            - name: BACKEND_STORE_URI
+              value: postgresql://$(PGU):$(PGP)@postgres:5432/mlflow
+            - {name: PGU, valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" . }}, key: POSTGRES_USER}}}
+            - {name: PGP, valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" . }}, key: POSTGRES_PASSWORD}}}
+          readinessProbe: {httpGet: {path: /health, port: 5000}, initialDelaySeconds: 20, periodSeconds: 15}
+          resources: {{- toYaml .Values.mlflow.resources | nindent 12 }}
+{{- end }}
+{{- range .Values.apis }}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ .name }}, labels: {app: {{ .name }}}}
+spec:
+  selector: {app: {{ .name }}}
+  ports: [{name: http, port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ .name }}, labels: {app: {{ .name }}}}
+spec:
+  replicas: {{ .replicas | default 1 }}
+  selector: {matchLabels: {app: {{ .name }}}}
+  template:
+    metadata: {labels: {app: {{ .name }}}}
+    spec:
+      containers:
+        - name: api
+          image: {{ $.Values.image.registry }}/api:{{ $.Values.image.tag }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports: [{containerPort: 8000}]
+          env:
+            - {name: SERVICE, value: {{ .service | quote }}}
+            {{- range .env }}
+            - name: {{ .name }}
+              {{- if .secretKey }}
+              valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" $ }}, key: {{ .secretKey }}}}
+              {{- else if .configKey }}
+              valueFrom: {configMapKeyRef: {name: platform-config, key: {{ .configKey }}}}
+              {{- end }}
+            {{- end }}
+          readinessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 5, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 15, periodSeconds: 20}
+          resources: {{- toYaml $.Values.apiResources | nindent 12 }}
+{{- if and .hpa .hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: {{ .name }}, labels: {app: {{ .name }}}}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ .name }}}
+  minReplicas: {{ .hpa.minReplicas }}
+  maxReplicas: {{ .hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: {{ .hpa.targetCPUUtilizationPercentage }}}}
+{{- end }}
+{{- end }}
+{{- if .Values.dashboard.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  selector: {app: dashboard}
+  ports: [{name: http, port: 8050, targetPort: 8050}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  labels: {{- include "pa.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector: {matchLabels: {app: dashboard}}
+  template:
+    metadata: {labels: {app: dashboard}}
+    spec:
+      containers:
+        - name: dashboard
+          image: {{ include "pa.image" (list .Values.dashboard.image "dashboard" .) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{containerPort: 8050}]
+          env:
+            - {name: CH_URL, valueFrom: {secretKeyRef: {name: {{ include "pa.secretName" . }}, key: chUrl}}}
+            - {name: ANALYTICS_API, valueFrom: {configMapKeyRef: {name: platform-config, key: ANALYTICS_API}}}
+          readinessProbe: {httpGet: {path: /, port: 8050}, initialDelaySeconds: 10, periodSeconds: 15}
+{{- end }}

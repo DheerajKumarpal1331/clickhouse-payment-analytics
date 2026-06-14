@@ -1,0 +1,25 @@
+payment-analytics {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Components enabled:
+  postgres={{ .Values.postgres.enabled }}  clickhouse={{ .Values.clickhouse.enabled }}  kafka={{ .Values.kafka.enabled }}
+  mlflow={{ .Values.mlflow.enabled }}  dashboard={{ .Values.dashboard.enabled }}  monitoring={{ .Values.monitoring.enabled }}
+  apis: {{ range .Values.apis }}{{ .name }} {{ end }}
+
+Next steps:
+  1. Watch rollout:   kubectl -n {{ .Release.Namespace }} get pods -w
+  2. Apply IaC (schema/topics) as Jobs against the running stores (see k8s/README.md).
+{{- if .Values.ingress.enabled }}
+  3. Reach the services via the Ingress hosts (add them to DNS / /etc/hosts):
+       http://fraud.{{ .Values.ingress.hostSuffix }}
+       http://dashboard.{{ .Values.ingress.hostSuffix }}
+{{- else }}
+  3. Port-forward to reach a service, e.g.:
+       kubectl -n {{ .Release.Namespace }} port-forward svc/fraud-api 8003:8000
+{{- end }}
+
+{{- if .Values.secrets.create }}
+
+WARNING: secrets.create=true uses the in-values passwords. For production set
+secrets.create=false and reference an externally-managed Secret via
+secrets.existingSecret.
+{{- end }}

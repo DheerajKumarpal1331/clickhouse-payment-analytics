@@ -1,0 +1,68 @@
+# Airflow orchestration — MINIMAL reference (webserver + scheduler, LocalExecutor,
+# metadata in the platform Postgres). For production deploy the official Apache
+# Airflow Helm chart with the KubernetesExecutor (each task in its own pod) and
+# git-sync for DAGs; this manifest shows the shape and shares the platform's
+# Postgres/ClickHouse so the same DAGs (airflow/) run unchanged.
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: airflow-config, namespace: payments}
+data:
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  AIRFLOW__METRICS__STATSD_ON: "true"
+  AIRFLOW__METRICS__STATSD_HOST: statsd-exporter
+  AIRFLOW__METRICS__STATSD_PORT: "9125"
+  AIRFLOW__METRICS__STATSD_PREFIX: airflow
+---
+apiVersion: v1
+kind: Service
+metadata: {name: airflow-web, namespace: payments, labels: {app: airflow-web}}
+spec:
+  selector: {app: airflow-web}
+  ports: [{name: http, port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: airflow-web, namespace: payments}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: airflow-web}}
+  template:
+    metadata: {labels: {app: airflow-web}}
+    spec:
+      containers:
+        - name: webserver
+          image: apache/airflow:2.9.3
+          args: ["webserver"]
+          ports: [{containerPort: 8080}]
+          envFrom: [{configMapRef: {name: airflow-config}}]
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: postgresql+psycopg2://$(PGU):$(PGP)@postgres:5432/airflow
+            - {name: PGU, valueFrom: {secretKeyRef: {name: platform-secrets, key: POSTGRES_USER}}}
+            - {name: PGP, valueFrom: {secretKeyRef: {name: platform-secrets, key: POSTGRES_PASSWORD}}}
+          resources: {requests: {cpu: "250m", memory: 512Mi}, limits: {cpu: "1", memory: 1Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: airflow-scheduler, namespace: payments}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: airflow-scheduler}}
+  template:
+    metadata: {labels: {app: airflow-scheduler}}
+    spec:
+      containers:
+        - name: scheduler
+          image: apache/airflow:2.9.3
+          args: ["scheduler"]
+          envFrom: [{configMapRef: {name: airflow-config}}]
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: postgresql+psycopg2://$(PGU):$(PGP)@postgres:5432/airflow
+            - {name: PGU, valueFrom: {secretKeyRef: {name: platform-secrets, key: POSTGRES_USER}}}
+            - {name: PGP, valueFrom: {secretKeyRef: {name: platform-secrets, key: POSTGRES_PASSWORD}}}
+            - {name: CH_URL, valueFrom: {secretKeyRef: {name: platform-secrets, key: CH_URL}}}
+            - {name: PG_DSN, valueFrom: {secretKeyRef: {name: platform-secrets, key: PG_DSN}}}
+          resources: {requests: {cpu: "250m", memory: 512Mi}, limits: {cpu: "1", memory: 1Gi}}
