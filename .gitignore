@@ -23,3 +23,9 @@ data/
 mlruns/
 mlartifacts/
 *.db
+
+# Airflow runtime (logs are generated; DAGs/operators/sensors are tracked)
+airflow/logs/
+
+# graphify knowledge-graph output (regenerate with /graphify)
+graphify-out/

@@ -22,8 +22,18 @@ x-airflow-common: &airflow-common
     AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
     AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-false}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    # custom operators/sensors live at the project root -> importable from DAGs
+    PYTHONPATH: /opt/airflow
+    # connector libs for the stock image (DAGs use stdlib urllib + psycopg2,
+    # but pin these so a swap to clickhouse-connect needs no rebuild)
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    # DAGs connect out to the platform's stores (Airflow Variable can override per-env)
+    CH_URL: http://${CLICKHOUSE_USER:-analytics}:${CLICKHOUSE_PASSWORD:-analytics_secret}@clickhouse:8123
+    PG_DSN: postgresql://${POSTGRES_USER:-payments}:${POSTGRES_PASSWORD:-payments_secret}@postgres:5432/${POSTGRES_DB:-payments}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/operators:/opt/airflow/operators
+    - ./airflow/sensors:/opt/airflow/sensors
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
   depends_on:

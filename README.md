@@ -60,6 +60,10 @@ python data_generator/generate.py historical \
 - **Phase 3** — generator validated: 106-column transactions, all 6 fraud
   scenarios, and verified temporal patterns (peak hours, weekends, holidays,
   salary days).
+- **Phase 10** — all 8 Airflow DAGs parse with zero import errors; watermark CDC
+  validated live (201 rows Postgres → ClickHouse, cursor advanced), and the
+  data-quality operator runs its contracts across both ClickHouse and Postgres.
+  See [`airflow/README.md`](airflow/README.md).
 
 ## Roadmap (later phases)
 
