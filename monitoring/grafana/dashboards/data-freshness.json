@@ -1,0 +1,94 @@
+{
+  "uid": "data-freshness",
+  "title": "Data Freshness",
+  "tags": ["platform", "data-quality"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Warehouse freshness (ClickHouse — lag behind now)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2, "type": "stat", "title": "fact_transactions lag",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 3600 }, { "color": "red", "value": 21600 } ] } } },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT dateDiff('second', max(event_time), now()) AS lag_seconds FROM payments.fact_transactions" } ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "fact_refunds lag",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 7200 }, { "color": "red", "value": 86400 } ] } } },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT dateDiff('second', max(event_time), now()) AS lag_seconds FROM payments.fact_refunds" } ]
+    },
+    {
+      "id": 4, "type": "stat", "title": "fact_settlements lag",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 90000 }, { "color": "red", "value": 172800 } ] } } },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT dateDiff('second', max(ingested_at), now()) AS lag_seconds FROM payments.fact_settlements" } ]
+    },
+    {
+      "id": 5, "type": "stat", "title": "fact_fraud_events lag",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 3600 }, { "color": "red", "value": 21600 } ] } } },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT dateDiff('second', max(scored_at), now()) AS lag_seconds FROM payments.fact_fraud_events" } ]
+    },
+    {
+      "id": 6, "type": "row", "title": "OLTP source freshness (PostgreSQL)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 }
+    },
+    {
+      "id": 7, "type": "stat", "title": "transaction_header lag (source of truth)",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 7 },
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 3600 }, { "color": "red", "value": 86400 } ] } } },
+      "targets": [ { "refId": "A", "format": "table",
+        "rawSql": "SELECT EXTRACT(EPOCH FROM now() - max(created_at)) AS lag_seconds FROM txn.transaction_header" } ]
+    },
+    {
+      "id": 8, "type": "stat", "title": "OLTP transactions (last 24h)",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 7 },
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "format": "table",
+        "rawSql": "SELECT count(*) AS n FROM txn.transaction_header WHERE created_at > now() - interval '24 hours'" } ]
+    },
+    {
+      "id": 9, "type": "stat", "title": "Warehouse transactions (today)",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 7 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT count() AS n FROM payments.fact_transactions WHERE event_date = today()" } ]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Warehouse transactions ingested per hour",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT toStartOfHour(event_time) AS time, count() AS transactions FROM payments.fact_transactions WHERE event_time >= now() - INTERVAL 24 HOUR GROUP BY time ORDER BY time" } ]
+    }
+  ]
+}

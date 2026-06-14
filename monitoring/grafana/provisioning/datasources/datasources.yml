@@ -1,0 +1,42 @@
+apiVersion: 1
+
+# Three datasources back the dashboards:
+#   - Prometheus  : infra / app / Airflow time series (platform health, ML latency)
+#   - ClickHouse  : warehouse freshness + business/ML aggregates (Data Freshness)
+#   - Postgres    : OLTP freshness (source-of-truth lag)
+# Credentials come from compose env so nothing is committed.
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: clickhouse
+    access: proxy
+    jsonData:
+      protocol: native
+      host: clickhouse
+      port: 9000
+      username: ${CLICKHOUSE_USER}
+      defaultDatabase: payments
+    secureJsonData:
+      password: ${CLICKHOUSE_PASSWORD}
+
+  - name: Postgres
+    type: postgres
+    uid: postgres
+    access: proxy
+    url: postgres:5432
+    user: ${POSTGRES_USER}
+    jsonData:
+      database: ${POSTGRES_DB}
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}

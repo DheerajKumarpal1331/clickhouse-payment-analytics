@@ -3,7 +3,7 @@
 A production-grade FinTech payment processing & analytics platform modelled on
 real Indian payment processors (UPI/NPCI rails, RBI MDR/GST regime, RuPay,
 T+1 settlement). Built phase by phase — this repo currently covers
-**Phases 0–3 + 0.5 (containerization)**.
+**Phases 0–11**.
 
 ## Phases in this repo
 
@@ -14,6 +14,14 @@ T+1 settlement). Built phase by phase — this repo currently covers
 | **1 — System Design** | HLD · LLD · ERD · DFDs + 6 architecture diagrams (`.drawio`) | [`architecture/`](architecture/) |
 | **2 — PostgreSQL OLTP** | 11-domain 3NF schema, indexes, procedures, seed data, tests | [`postgres/`](postgres/) |
 | **3 — Synthetic Data Generation** | Merchant/customer/device/transaction/refund/fraud generators | [`data_generator/`](data_generator/) |
+| **4 — Kafka Streaming** | 8 event schemas, Postgres→Kafka producers, Kafka→ClickHouse consumers + DLQ | [`kafka/`](kafka/) |
+| **5 — ClickHouse OLAP** | 7 dims + 7 facts, materialized views, features, marts, optimization | [`clickhouse/`](clickhouse/) |
+| **6 — Feature Store** | Online/offline (PIT) feature pipelines over the warehouse | [`feature_store/`](feature_store/) |
+| **7 — Fraud ML** | Velocity feature engineering, training/evaluation, MLflow registry | [`ml/`](ml/) |
+| **8 — APIs** | 3 FastAPI services (fraud scoring, merchant, analytics) + shared layer | [`api/`](api/) |
+| **9 — Dashboards** | 5 Plotly Dash operator dashboards | [`dashboard/`](dashboard/) |
+| **10 — Orchestration** | 8 Airflow DAGs, custom operators/sensors, watermark CDC | [`airflow/`](airflow/) |
+| **11 — Monitoring** | Prometheus + Alertmanager + Grafana; Kafka lag / API latency / ClickHouse / Airflow | [`monitoring/`](monitoring/) |
 
 ## Quick start — one command
 
@@ -64,9 +72,9 @@ python data_generator/generate.py historical \
   validated live (201 rows Postgres → ClickHouse, cursor advanced), and the
   data-quality operator runs its contracts across both ClickHouse and Postgres.
   See [`airflow/README.md`](airflow/README.md).
-
-## Roadmap (later phases)
-
-Streaming (Kafka), OLAP warehouse (ClickHouse), feature store, fraud ML + MLflow,
-real-time scoring API, Plotly Dash dashboards, Airflow orchestration, and
-Prometheus/Grafana monitoring — to be built in subsequent phases.
+- **Phase 11** — monitoring validated live: `promtool` accepts all 17 alert rules
+  and the scrape config; Prometheus targets healthy for ClickHouse, Postgres,
+  cadvisor and the Airflow statsd-exporter; Grafana provisions all three
+  datasources (Prometheus/ClickHouse/Postgres health OK) and seven dashboards,
+  and every Data-Freshness / ML-Monitoring SQL runs against the live schema.
+  See [`monitoring/README.md`](monitoring/README.md).

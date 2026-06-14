@@ -1,0 +1,166 @@
+# Prometheus alerting rules (Phase 11).
+# Grouped by concern; thresholds tuned for a single-host dev/demo stack and
+# annotated so the intent (not just the number) is clear in the alert.
+groups:
+  # ----------------------------- INFRASTRUCTURE ---------------------------
+  - name: infrastructure
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Scrape target down: {{ $labels.job }}/{{ $labels.instance }}"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for 2m."
+
+      - alert: ContainerHighCPU
+        expr: sum(rate(container_cpu_usage_seconds_total{name=~"payments-.*"}[5m])) by (name) > 0.9
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "High CPU on {{ $labels.name }}"
+          description: "{{ $labels.name }} CPU > 90% for 5m."
+
+      - alert: ContainerHighMemory
+        expr: |
+          container_memory_usage_bytes{name=~"payments-.*"}
+            / container_spec_memory_limit_bytes{name=~"payments-.*"} > 0.9
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "High memory on {{ $labels.name }}"
+          description: "{{ $labels.name }} memory > 90% of its limit for 5m."
+
+  # ------------------------------- KAFKA LAG ------------------------------
+  - name: kafka
+    rules:
+      - alert: KafkaConsumerLagHigh
+        expr: sum(kafka_consumergroup_lag) by (consumergroup, topic) > 100000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Consumer lag high on {{ $labels.topic }} ({{ $labels.consumergroup }})"
+          description: "Lag > 100k messages for 5m — consumers falling behind producers."
+
+      - alert: KafkaConsumerStalled
+        # Lag is non-zero but the consumer has inserted nothing for 10m.
+        expr: |
+          sum(kafka_consumergroup_lag) by (topic) > 0
+          and sum(rate(events_inserted_total[10m])) by (topic) == 0
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Consumer stalled on {{ $labels.topic }}"
+          description: "Backlog present but zero inserts to ClickHouse for 10m."
+
+      - alert: KafkaDLQGrowing
+        expr: sum(rate(events_dlq_total[5m])) by (topic) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Events flowing to DLQ on {{ $labels.topic }}"
+          description: "Dead-letter rate > 0 for 5m — poison messages or schema drift."
+
+      - alert: KafkaBrokerDown
+        expr: kafka_brokers < 1
+        for: 1m
+        labels: { severity: critical }
+        annotations: { summary: "No Kafka brokers reporting" }
+
+  # ------------------------------ API LATENCY -----------------------------
+  - name: api
+    rules:
+      - alert: ApiLatencyHighP99
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(api_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p99 latency > 500ms on {{ $labels.service }}"
+          description: "99th-percentile request latency over SLO for 5m."
+
+      - alert: FraudApiLatencyHighP99
+        # The real-time scoring path carries a tighter SLA (<100ms).
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(api_request_duration_seconds_bucket{service="fraud"}[5m])) by (le)
+          ) > 0.1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Fraud scoring p99 > 100ms"
+          description: "Real-time scoring SLA breached — checkout authorization at risk."
+
+      - alert: ApiErrorRateHigh
+        expr: |
+          sum(rate(api_requests_total{status=~"5.."}[5m])) by (service)
+          / sum(rate(api_requests_total[5m])) by (service) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "5xx error rate > 5% on {{ $labels.service }}"
+
+  # --------------------------- CLICKHOUSE QUERIES -------------------------
+  - name: clickhouse
+    rules:
+      - alert: ClickHouseTooManyParts
+        expr: ClickHouseAsyncMetrics_MaxPartCountForPartition > 300
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "ClickHouse partition has >300 parts — merges falling behind"
+
+      - alert: ClickHouseFailedQueries
+        expr: rate(ClickHouseProfileEvents_FailedQuery[5m]) > 0.2
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "ClickHouse query failures elevated"
+          description: "Failed-query rate > 0.2/s for 5m."
+
+      - alert: ClickHouseQueriesBacklog
+        expr: ClickHouseMetrics_Query > 50
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "ClickHouse concurrent running queries > 50"
+
+  # ------------------------------ AIRFLOW HEALTH --------------------------
+  - name: airflow
+    rules:
+      - alert: AirflowSchedulerDown
+        # statsd_exporter turns the scheduler heartbeat counter into a rate;
+        # no heartbeat increments for 2m means the scheduler is wedged/dead.
+        expr: rate(airflow_scheduler_heartbeat_total[2m]) == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Airflow scheduler heartbeat stopped"
+          description: "No scheduler heartbeat for 2m — DAGs will not be scheduled."
+
+      - alert: AirflowDagImportErrors
+        expr: airflow_dag_processing_import_errors > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Airflow DAG import errors present ({{ $value }})"
+          description: "A DAG failed to parse — that pipeline is silently not running."
+
+      - alert: AirflowTaskFailuresSpiking
+        expr: sum(rate(airflow_ti_failures_total[10m])) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Airflow task failure rate elevated"
+
+      - alert: AirflowPoolStarving
+        expr: sum(airflow_pool_starving_tasks) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Airflow tasks starving for pool slots"
+          description: "Tasks queued with no available slots for 10m."

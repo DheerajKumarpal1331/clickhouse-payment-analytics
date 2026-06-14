@@ -1,0 +1,96 @@
+{
+  "uid": "ml-monitoring",
+  "title": "ML Monitoring",
+  "tags": ["platform", "ml", "fraud"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Real-time scoring SLA (Prometheus — fraud API)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Scoring latency p50 / p95 / p99",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(api_request_duration_seconds_bucket{service=\"fraud\"}[5m])) by (le))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum(rate(api_request_duration_seconds_bucket{service=\"fraud\"}[5m])) by (le))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum(rate(api_request_duration_seconds_bucket{service=\"fraud\"}[5m])) by (le))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "p99 vs 100ms SLA",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 0.08 }, { "color": "red", "value": 0.1 } ] } } },
+      "targets": [ { "refId": "A",
+        "expr": "histogram_quantile(0.99, sum(rate(api_request_duration_seconds_bucket{service=\"fraud\"}[5m])) by (le))" } ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Scoring throughput (req/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [ { "refId": "A",
+        "expr": "sum(rate(api_requests_total{service=\"fraud\"}[5m]))", "legendFormat": "requests" } ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Scoring error rate (5xx)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } },
+      "targets": [ { "refId": "A",
+        "expr": "sum(rate(api_requests_total{service=\"fraud\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(api_requests_total{service=\"fraud\"}[5m])), 1)",
+        "legendFormat": "5xx ratio" } ]
+    },
+    {
+      "id": 6, "type": "row", "title": "Predictions & model behaviour (ClickHouse — fact_fraud_events)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Predictions per hour",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT toStartOfHour(scored_at) AS time, count() AS predictions FROM payments.fact_fraud_events WHERE scored_at >= now() - INTERVAL 24 HOUR GROUP BY time ORDER BY time" } ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Mean fraud score per hour (drift watch)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 1 } },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT toStartOfHour(scored_at) AS time, avg(score) AS mean_score FROM payments.fact_fraud_events WHERE scored_at >= now() - INTERVAL 24 HOUR GROUP BY time ORDER BY time" } ]
+    },
+    {
+      "id": 9, "type": "piechart", "title": "Predictions by risk level (today)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 26 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT risk_level, count() AS n FROM payments.fact_fraud_events WHERE toDate(scored_at) = today() GROUP BY risk_level ORDER BY n DESC" } ]
+    },
+    {
+      "id": 10, "type": "table", "title": "Active model versions (last 7d)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 26 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT model_version, count() AS predictions, round(avg(score), 4) AS mean_score, max(scored_at) AS last_seen FROM payments.fact_fraud_events WHERE scored_at >= now() - INTERVAL 7 DAY GROUP BY model_version ORDER BY last_seen DESC" } ]
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Observed fraud rate (labels) per day",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 26 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } },
+      "targets": [ { "refId": "A", "format": 1,
+        "rawSql": "SELECT event_date AS time, sum(fraud_label) / count() AS fraud_rate FROM payments.fact_transactions WHERE event_date >= today() - 30 GROUP BY event_date ORDER BY event_date" } ]
+    }
+  ]
+}

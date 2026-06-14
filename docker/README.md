@@ -35,6 +35,7 @@ profiles**, so the default `up -d` always succeeds on a fresh checkout:
 | grafana | grafana 11 | 3000 | default |
 | node-exporter / cadvisor | prom / google | 9100 / 8085 | default |
 | kafka-exporter / postgres-exporter | community | 9308 / 9187 | default |
+| statsd-exporter | prom (Airflow bridge) | 9102 | default |
 | pgadmin / clickhouse-ui / jupyter | dev tools | 5050 / 5521 / 8888 | default |
 | merchant/analytics/fraud-api | build `docker/api` | 8001-8003 | apps |
 | plotly-dashboard | build `docker/dashboard` | 8050 | apps |
@@ -63,9 +64,11 @@ Each buildable service under `docker/<svc>/` carries a `Dockerfile`,
 
 ## Monitoring
 
-Prometheus scrapes node-exporter, cadvisor, kafka-exporter, postgres-exporter,
-ClickHouse's native `/metrics`, and (under profiles) app `/metrics`. Grafana is
-provisioned with the Prometheus datasource and four dashboards
-(`docker/grafana/dashboards/`): Docker Health, Kafka, PostgreSQL, ClickHouse.
-Alert rules live in `docker/prometheus/alert.rules.yml`, routed by
-`docker/alertmanager/alertmanager.yml`.
+The full observability stack lives under [`monitoring/`](../monitoring/) (Phase 11):
+Prometheus scrape config, alert rules, Alertmanager routing, the Airflow StatsD
+mapping, and Grafana provisioning + dashboards. Prometheus scrapes node-exporter,
+cadvisor, kafka-exporter, postgres-exporter, ClickHouse's native endpoint, the
+Airflow statsd-exporter, and (under profiles) the pipeline/API `/metrics`.
+Grafana is provisioned with Prometheus + ClickHouse + Postgres datasources and
+seven dashboards (Platform Health, Data Freshness, ML Monitoring, plus Docker
+Health, Kafka, PostgreSQL, ClickHouse). See [`monitoring/README.md`](../monitoring/README.md).

@@ -1,5 +1,7 @@
-# Alertmanager — dev routing. In prod, wire receivers to Slack / PagerDuty /
-# email via secrets-managed webhook URLs (see deployment/).
+# Alertmanager routing (Phase 11) — dev defaults.
+# In qa/prod, wire the receivers to Slack / PagerDuty / email via
+# secrets-managed webhook URLs (see deployment/). Critical pages fast and
+# repeats hourly; warnings batch and repeat every 4h.
 global:
   resolve_timeout: 5m
 
@@ -12,6 +14,7 @@ route:
   routes:
     - matchers: [ 'severity="critical"' ]
       receiver: critical
+      group_wait: 10s
       repeat_interval: 1h
 
 receivers:
@@ -21,6 +24,8 @@ receivers:
     # webhook_configs:
     #   - url: 'https://hooks.slack.com/services/REPLACE/ME'
 
+# A firing critical mutes the matching warning so on-call sees one page,
+# not two, for the same incident.
 inhibit_rules:
   - source_matchers: [ 'severity="critical"' ]
     target_matchers: [ 'severity="warning"' ]

@@ -30,6 +30,11 @@ x-airflow-common: &airflow-common
     # DAGs connect out to the platform's stores (Airflow Variable can override per-env)
     CH_URL: http://${CLICKHOUSE_USER:-analytics}:${CLICKHOUSE_PASSWORD:-analytics_secret}@clickhouse:8123
     PG_DSN: postgresql://${POSTGRES_USER:-payments}:${POSTGRES_PASSWORD:-payments_secret}@postgres:5432/${POSTGRES_DB:-payments}
+    # Phase 11: push StatsD metrics to statsd-exporter -> Prometheus (job: airflow)
+    AIRFLOW__METRICS__STATSD_ON: "true"
+    AIRFLOW__METRICS__STATSD_HOST: statsd-exporter
+    AIRFLOW__METRICS__STATSD_PORT: "9125"
+    AIRFLOW__METRICS__STATSD_PREFIX: airflow
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/operators:/opt/airflow/operators
@@ -193,8 +198,8 @@ services:
     restart: *restart
     ports: ["${PROMETHEUS_PORT:-9090}:9090"]
     volumes:
-      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./docker/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts/alert.rules.yml:/etc/prometheus/alerts/alert.rules.yml:ro
       - promdata:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -208,7 +213,21 @@ services:
     restart: *restart
     ports: ["${ALERTMANAGER_PORT:-9093}:9093"]
     volumes:
-      - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks: [payments-net]
+
+  # Airflow StatsD -> Prometheus bridge (scraped by the `airflow` job).
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.27.1
+    container_name: payments-statsd-exporter
+    restart: *restart
+    command:
+      - --statsd.mapping-config=/etc/statsd/statsd-mapping.yml
+      - --statsd.listen-udp=:9125
+      - --web.listen-address=:9102
+    volumes:
+      - ./monitoring/statsd/statsd-mapping.yml:/etc/statsd/statsd-mapping.yml:ro
+    ports: ["${STATSD_EXPORTER_PORT:-9102}:9102"]
     networks: [payments-net]
 
   grafana:
@@ -221,9 +240,17 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # ClickHouse datasource plugin (Data Freshness / ML Monitoring dashboards)
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      # interpolated into provisioned datasources (no secrets committed)
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-analytics}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-analytics_secret}
+      POSTGRES_USER: ${POSTGRES_USER:-payments}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payments_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-payments}
     volumes:
-      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafanadata:/var/lib/grafana
     networks: [payments-net]
 
