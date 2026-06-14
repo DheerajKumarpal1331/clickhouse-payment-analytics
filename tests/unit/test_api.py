@@ -88,25 +88,25 @@ def _routes(app):
 
 def test_fraud_app_routes():
     from fastapi.testclient import TestClient
-    from api.fraud_service.main import app
+    from api.main import app
     c = TestClient(app)
     assert c.get("/health").status_code == 200
     assert {"/score", "/features", "/model_info", "/metrics"} <= _routes(app)
 
 
 def test_merchant_app_routes():
-    from api.merchant_service.main import app
+    from api.main import app
     assert {"/merchant", "/device", "/customer/{customer_code}", "/metrics"} <= _routes(app)
 
 
 def test_analytics_app_routes():
-    from api.analytics_service.main import app
+    from api.main import app
     assert {"/kpi", "/dashboard/{name}", "/metrics"} <= _routes(app)
 
 
 def test_metrics_endpoint_exposes_prometheus_text():
     from fastapi.testclient import TestClient
-    from api.fraud_service.main import app
+    from api.main import app
     c = TestClient(app)
     c.get("/health")  # generate one request to record
     body = c.get("/metrics").text

@@ -1,27 +1,29 @@
-# FastAPI Services (Phase 8)
+# Unified API (Phase 8)
 
-Three services expose the platform. One shared image (`docker/api/Dockerfile`)
-serves any of them — the `SERVICE` env selects which app uvicorn runs
-(`api.${SERVICE}.main:app`), so `merchant-api`, `analytics-api`, `fraud-api`
-(compose `apps` profile) all run the same image.
+One FastAPI app (`api/main.py`) serves all three domains behind a single port.
+The domains are independent `APIRouter`s included at the root — the paths don't
+collide, so every endpoint keeps its original path. Consolidated from the former
+three microservices (merchant / analytics / fraud); one image, one `/metrics`,
+one `/health`.
 
-| Service | Endpoints | Reads |
+| Domain | Endpoints | Reads |
 |---|---|---|
-| **merchant_service** | `/merchant`, `/merchant/{code}`, `/device`, `/device/{code}`, `/customer/{code}` | Postgres OLTP |
-| **fraud_service** | `POST /score`, `GET /features`, `GET /model_info` | ClickHouse velocity store + MLflow model |
-| **analytics_service** | `/kpi`, `/dashboard/{name}` | ClickHouse marts |
+| **merchant** | `/merchant`, `/merchant/{code}`, `/device`, `/device/{code}`, `/customer/{code}` | Postgres OLTP |
+| **fraud** | `POST /score`, `GET /features`, `GET /model_info` | ClickHouse velocity store + MLflow model |
+| **analytics** | `/kpi`, `/dashboard/{name}` | ClickHouse marts |
 
-Every service also exposes `/health` and `/metrics` (Prometheus, scraped by the
-platform Prometheus `services` job).
+The app also exposes `/`, `/health` and `/metrics` (Prometheus, scraped by the
+platform Prometheus `services` job — latency labeled by `route`).
 
 ## Layout
 
 ```
 api/
+├── main.py             unified app: instruments + includes the three routers
 ├── common/             config, ClickHouse + Postgres clients, Prometheus middleware
-├── merchant_service/   repository (OLTP SQL) + main
-├── fraud_service/      features (real-time velocity assembly) + scorer (model) + main
-└── analytics_service/  queries (mart SQL) + main
+├── merchant_service/   repository (OLTP SQL) + router
+├── fraud_service/      features (real-time velocity assembly) + scorer (model) + router
+└── analytics_service/  queries (mart SQL) + router
 ```
 
 ## Fraud scoring path (`<100ms` target)
@@ -41,10 +43,8 @@ export PG_DSN=postgresql://payments:payments_secret@localhost:5432/payments
 export CH_URL=http://analytics:analytics_secret@localhost:8123
 export MLFLOW_TRACKING_URI=http://localhost:5000
 
-SERVICE=merchant_service  uvicorn api.merchant_service.main:app  --port 8001
-SERVICE=analytics_service uvicorn api.analytics_service.main:app --port 8002
-SERVICE=fraud_service     uvicorn api.fraud_service.main:app     --port 8003
+uvicorn api.main:app --port 8000
 ```
 
-Containerized: `docker compose --profile apps up -d` (merchant-api :8001,
-analytics-api :8002, fraud-api :8003). OpenAPI docs at each service's `/docs`.
+Containerized: `docker compose --profile apps up -d` (the `api` service on
+:8000). OpenAPI docs at http://localhost:8000/docs.

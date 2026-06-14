@@ -1,87 +1,30 @@
-# The three FastAPI services (one image, SERVICE env selects which app). Each is
-# a Deployment + ClusterIP Service. The fraud API carries an HPA — it is the
-# latency-critical checkout hot path that must scale with traffic.
+# Unified Payment Analytics API — all three domains (fraud / merchant /
+# analytics) in one image (api/main.py). A single Deployment + ClusterIP
+# Service, fronted by an HPA: the fraud /score path is the latency-critical
+# checkout hot path that must scale with traffic.
 # Image built from docker/api and pushed to your registry.
-#
-# --- merchant API (reads Postgres) ------------------------------------------
 apiVersion: v1
 kind: Service
-metadata: {name: merchant-api, namespace: payments, labels: {app: merchant-api}}
+metadata: {name: api, namespace: payments, labels: {app: api}}
 spec:
-  selector: {app: merchant-api}
+  selector: {app: api}
   ports: [{name: http, port: 8000, targetPort: 8000}]
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: merchant-api, namespace: payments}
-spec:
-  replicas: 2
-  selector: {matchLabels: {app: merchant-api}}
-  template:
-    metadata: {labels: {app: merchant-api}}
-    spec:
-      containers:
-        - name: api
-          image: payment-analytics/api:latest
-          ports: [{containerPort: 8000}]
-          env:
-            - {name: SERVICE, value: merchant_service}
-            - {name: PG_DSN, valueFrom: {secretKeyRef: {name: platform-secrets, key: PG_DSN}}}
-          readinessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 5, periodSeconds: 10}
-          livenessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 15, periodSeconds: 20}
-          resources: {requests: {cpu: "100m", memory: 256Mi}, limits: {cpu: "500m", memory: 512Mi}}
----
-# --- analytics API (reads ClickHouse) ---------------------------------------
-apiVersion: v1
-kind: Service
-metadata: {name: analytics-api, namespace: payments, labels: {app: analytics-api}}
-spec:
-  selector: {app: analytics-api}
-  ports: [{name: http, port: 8000, targetPort: 8000}]
----
-apiVersion: apps/v1
-kind: Deployment
-metadata: {name: analytics-api, namespace: payments}
-spec:
-  replicas: 2
-  selector: {matchLabels: {app: analytics-api}}
-  template:
-    metadata: {labels: {app: analytics-api}}
-    spec:
-      containers:
-        - name: api
-          image: payment-analytics/api:latest
-          ports: [{containerPort: 8000}]
-          env:
-            - {name: SERVICE, value: analytics_service}
-            - {name: CH_URL, valueFrom: {secretKeyRef: {name: platform-secrets, key: CH_URL}}}
-          readinessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 5, periodSeconds: 10}
-          livenessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 15, periodSeconds: 20}
-          resources: {requests: {cpu: "100m", memory: 256Mi}, limits: {cpu: "500m", memory: 512Mi}}
----
-# --- fraud API (ClickHouse + MLflow; HPA-scaled hot path) -------------------
-apiVersion: v1
-kind: Service
-metadata: {name: fraud-api, namespace: payments, labels: {app: fraud-api}}
-spec:
-  selector: {app: fraud-api}
-  ports: [{name: http, port: 8000, targetPort: 8000}]
----
-apiVersion: apps/v1
-kind: Deployment
-metadata: {name: fraud-api, namespace: payments}
+metadata: {name: api, namespace: payments}
 spec:
   replicas: 3
-  selector: {matchLabels: {app: fraud-api}}
+  selector: {matchLabels: {app: api}}
   template:
-    metadata: {labels: {app: fraud-api}}
+    metadata: {labels: {app: api}}
     spec:
       containers:
         - name: api
           image: payment-analytics/api:latest
           ports: [{containerPort: 8000}]
           env:
-            - {name: SERVICE, value: fraud_service}
+            - {name: PG_DSN, valueFrom: {secretKeyRef: {name: platform-secrets, key: PG_DSN}}}
             - {name: CH_URL, valueFrom: {secretKeyRef: {name: platform-secrets, key: CH_URL}}}
             - {name: MLFLOW_TRACKING_URI, valueFrom: {configMapKeyRef: {name: platform-config, key: MLFLOW_TRACKING_URI}}}
           readinessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 5, periodSeconds: 10}
@@ -90,9 +33,9 @@ spec:
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
-metadata: {name: fraud-api, namespace: payments}
+metadata: {name: api, namespace: payments}
 spec:
-  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: fraud-api}
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api}
   minReplicas: 3
   maxReplicas: 12
   metrics:

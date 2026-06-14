@@ -1,14 +1,16 @@
 # ============================================================
 # Payment Platform — full stack.
-#   docker compose up -d            # infra + monitoring + dev tools (runnable now)
+#   docker compose up -d            # core infra + monitoring (Prometheus/Grafana)
 #   docker compose --profile pipeline up -d   # + Kafka producers/consumers (Phase 4)
-#   docker compose --profile apps up -d       # + FastAPI services + dashboard
+#   docker compose --profile apps up -d       # + unified API + Plotly dashboard
 #   docker compose --profile ml up -d         # + feature store + fraud train/serve
-#   docker compose --profile airflow up -d    # + Airflow (web/scheduler/worker/triggerer)
+#   docker compose --profile airflow up -d    # + Airflow (web + scheduler, LocalExecutor)
 #
 # Default (no profile) services use official images or build now and come up
-# healthy on a fresh checkout. Profile services are wired up but depend on code
-# delivered in later phases.
+# healthy on a fresh checkout. Observability is Prometheus + Grafana (the single
+# operations pane); ClickHouse SQL is reachable on :8123 and via Grafana's
+# ClickHouse datasource. The three former API microservices are consolidated
+# into one `api` service; Airflow runs LocalExecutor (no celery/redis).
 # ============================================================
 
 x-restart: &restart unless-stopped
@@ -16,10 +18,9 @@ x-restart: &restart unless-stopped
 x-airflow-common: &airflow-common
   image: ${AIRFLOW_IMAGE:-apache/airflow:2.9.3}
   environment: &airflow-env
-    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-CeleryExecutor}
+    # LocalExecutor: scheduler runs tasks in-process — no Celery worker/broker/triggerer
+    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-LocalExecutor}
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
     AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-false}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     # custom operators/sensors live at the project root -> importable from DAGs
@@ -43,7 +44,6 @@ x-airflow-common: &airflow-common
     - ./airflow/plugins:/opt/airflow/plugins
   depends_on:
     postgres: {condition: service_healthy}
-    redis: {condition: service_healthy}
   networks: [payments-net]
   profiles: [airflow]
 
@@ -158,19 +158,6 @@ services:
     restart: "no"
     networks: [payments-net]
 
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: payments-kafka-ui
-    restart: *restart
-    depends_on:
-      kafka: {condition: service_healthy}
-    ports: ["${KAFKA_UI_PORT:-8080}:8080"]
-    environment:
-      KAFKA_CLUSTERS_0_NAME: payments
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
-      DYNAMIC_CONFIG_ENABLED: "true"
-    networks: [payments-net]
-
   # ============================ MLflow ===============================
   mlflow:
     build: {context: ./docker/mlflow}
@@ -254,31 +241,6 @@ services:
       - grafanadata:/var/lib/grafana
     networks: [payments-net]
 
-  node-exporter:
-    image: prom/node-exporter:v1.8.1
-    container_name: payments-node-exporter
-    restart: *restart
-    ports: ["${NODE_EXPORTER_PORT:-9100}:9100"]
-    command:
-      - --path.rootfs=/host
-    volumes:
-      - /:/host:ro,rslave
-    networks: [payments-net]
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: payments-cadvisor
-    restart: *restart
-    ports: ["${CADVISOR_PORT:-8085}:8080"]
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
-    privileged: true
-    networks: [payments-net]
-
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.7.0
     container_name: payments-kafka-exporter
@@ -299,44 +261,6 @@ services:
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
     ports: ["9187:9187"]
-    networks: [payments-net]
-
-  # ======================= DEVELOPMENT UTILITIES =====================
-  pgadmin:
-    image: dpage/pgadmin4:8.9
-    container_name: payments-pgadmin
-    restart: *restart
-    depends_on: [postgres]
-    ports: ["${PGADMIN_PORT:-5050}:80"]
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@payments.local}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-    volumes:
-      - pgadmindata:/var/lib/pgadmin
-    networks: [payments-net]
-
-  clickhouse-ui:
-    image: ghcr.io/caioricciuti/ch-ui:latest
-    container_name: payments-clickhouse-ui
-    restart: *restart
-    depends_on: [clickhouse]
-    ports: ["${CLICKHOUSE_UI_PORT:-5521}:5521"]
-    environment:
-      VITE_CLICKHOUSE_URL: http://localhost:${CLICKHOUSE_HTTP_PORT:-8123}
-      VITE_CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-      VITE_CLICKHOUSE_PASS: ${CLICKHOUSE_PASSWORD}
-    networks: [payments-net]
-
-  jupyter:
-    image: jupyter/scipy-notebook:latest
-    container_name: payments-jupyter
-    restart: *restart
-    ports: ["${JUPYTER_PORT:-8888}:8888"]
-    environment:
-      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-payments}
-    volumes:
-      - ./notebooks:/home/jovyan/work
     networks: [payments-net]
 
   # ===================== PIPELINE (profile=pipeline) =================
@@ -370,46 +294,39 @@ services:
     command: ["python", "-m", "consumers.run_consumer", "--all"]
     networks: [payments-net]
 
+  # Continuous OLTP source — streams fresh transactions into Postgres, which the
+  # CDC producer above carries to Kafka -> ClickHouse, keeping the whole platform
+  # (dashboard realtime strip, Kafka lag, fraud traffic) alive. Tune via
+  # GEN_RATE (batches/sec) and GEN_BATCH (txns/batch).
+  data-generator:
+    build: {context: ., dockerfile: docker/generator/Dockerfile}
+    container_name: payments-data-generator
+    restart: *restart
+    profiles: [pipeline]
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      PG_DSN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["--rate", "${GEN_RATE:-8}", "--batch", "${GEN_BATCH:-4}"]
+    networks: [payments-net]
+
   # ===================== APPLICATIONS (profile=apps) =================
-  merchant-api:
+  # Unified API — fraud / merchant / analytics domains in one FastAPI app
+  # (api/main.py). Consolidated from the former three microservices.
+  api:
     build: {context: ., dockerfile: docker/api/Dockerfile}
-    container_name: payments-merchant-api
+    container_name: payments-api
     restart: *restart
     profiles: [apps]
     depends_on:
       postgres: {condition: service_healthy}
-    environment:
-      SERVICE: merchant_service
-      PG_DSN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    ports: ["${MERCHANT_API_PORT:-8001}:8000"]
-    networks: [payments-net]
-
-  analytics-api:
-    build: {context: ., dockerfile: docker/api/Dockerfile}
-    container_name: payments-analytics-api
-    restart: *restart
-    profiles: [apps]
-    depends_on:
-      clickhouse: {condition: service_healthy}
-    environment:
-      SERVICE: analytics_service
-      CH_URL: http://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse:8123
-    ports: ["${ANALYTICS_API_PORT:-8002}:8000"]
-    networks: [payments-net]
-
-  fraud-api:
-    build: {context: ., dockerfile: docker/api/Dockerfile}
-    container_name: payments-fraud-api
-    restart: *restart
-    profiles: [apps]
-    depends_on:
       clickhouse: {condition: service_healthy}
       mlflow: {condition: service_healthy}
     environment:
-      SERVICE: fraud_service
+      PG_DSN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       CH_URL: http://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse:8123
       MLFLOW_TRACKING_URI: http://mlflow:5000
-    ports: ["${FRAUD_API_PORT:-8003}:8000"]
+    ports: ["${API_PORT:-8000}:8000"]
     networks: [payments-net]
 
   plotly-dashboard:
@@ -417,10 +334,10 @@ services:
     container_name: payments-dashboard
     restart: *restart
     profiles: [apps]
-    depends_on: [analytics-api]
+    depends_on: [api]
     environment:
       CH_URL: http://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@clickhouse:8123
-      ANALYTICS_API: http://analytics-api:8000
+      ANALYTICS_API: http://api:8000
     ports: ["${DASHBOARD_PORT:-8050}:8050"]
     networks: [payments-net]
 
@@ -461,18 +378,6 @@ services:
     networks: [payments-net]
 
   # ====================== AIRFLOW (profile=airflow) ==================
-  redis:
-    image: redis:7-alpine
-    container_name: payments-redis
-    restart: *restart
-    profiles: [airflow]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [payments-net]
-
   airflow-init:
     <<: *airflow-common
     container_name: payments-airflow-init
@@ -493,27 +398,14 @@ services:
     ports: ["${AIRFLOW_WEB_PORT:-8082}:8080"]
     depends_on:
       postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
       airflow-init: {condition: service_completed_successfully}
 
+  # LocalExecutor: the scheduler runs tasks in-process — no separate
+  # celery worker / triggerer / redis broker needed.
   airflow-scheduler:
     <<: *airflow-common
     container_name: payments-airflow-scheduler
     command: scheduler
-    depends_on:
-      airflow-init: {condition: service_completed_successfully}
-
-  airflow-worker:
-    <<: *airflow-common
-    container_name: payments-airflow-worker
-    command: celery worker
-    depends_on:
-      airflow-init: {condition: service_completed_successfully}
-
-  airflow-triggerer:
-    <<: *airflow-common
-    container_name: payments-airflow-triggerer
-    command: triggerer
     depends_on:
       airflow-init: {condition: service_completed_successfully}
 
@@ -525,7 +417,6 @@ volumes:
   mlflowdata:
   promdata:
   grafanadata:
-  pgadmindata:
 
 networks:
   payments-net:

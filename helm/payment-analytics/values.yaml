@@ -61,20 +61,15 @@ mlflow:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: 500m, memory: 512Mi}
 
-# ---- application APIs (one image, SERVICE env selects the app) --------------
+# ---- unified application API (fraud / merchant / analytics in one image) ----
+# Single deployment; the fraud /score path is the latency-critical hot path, so
+# the API carries an HPA. Adding a domain is a router in api/main.py, not a new
+# service.
 apis:
-  - name: merchant-api
-    service: merchant_service
-    replicas: 2
-    env: [{name: PG_DSN, secretKey: pgDsn}]
-  - name: analytics-api
-    service: analytics_service
-    replicas: 2
-    env: [{name: CH_URL, secretKey: chUrl}]
-  - name: fraud-api
-    service: fraud_service
+  - name: api
     replicas: 3
     env:
+      - {name: PG_DSN, secretKey: pgDsn}
       - {name: CH_URL, secretKey: chUrl}
       - {name: MLFLOW_TRACKING_URI, configKey: MLFLOW_TRACKING_URI}
     hpa:

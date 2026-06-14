@@ -1,7 +1,7 @@
 # Prometheus scrape config for the payment-analytics platform (Phase 11).
 # Four monitoring concerns the platform cares about most:
 #   - Kafka consumer lag   -> kafka-exporter + the pipeline apps' own /metrics
-#   - API latency          -> the three FastAPI services' /metrics (job: services)
+#   - API latency          -> the unified API's /metrics (job: services)
 #   - ClickHouse queries   -> ClickHouse native Prometheus endpoint (:9363)
 #   - Airflow health       -> Airflow StatsD -> statsd-exporter -> here
 global:
@@ -21,12 +21,6 @@ rule_files:
 scrape_configs:
   - job_name: prometheus
     static_configs: [{ targets: ["localhost:9090"] }]
-
-  # ---- Infrastructure: host + per-container resource metrics --------------
-  - job_name: node-exporter
-    static_configs: [{ targets: ["node-exporter:9100"] }]
-  - job_name: cadvisor
-    static_configs: [{ targets: ["cadvisor:8080"] }]
 
   # ---- Kafka: broker health + consumer-group lag -------------------------
   - job_name: kafka
@@ -56,10 +50,10 @@ scrape_configs:
       - targets: ["kafka-consumer:9000", "kafka-producer:9000"]
         labels: { component: pipeline }
 
-  # ---- API services /metrics (`apps` profile) ---------------------------
+  # ---- Unified API /metrics (`apps` profile) ----------------------------
   #   api_request_duration_seconds (histogram), api_requests_total
   - job_name: services
     metrics_path: /metrics
     static_configs:
-      - targets: ["fraud-api:8000", "merchant-api:8000", "analytics-api:8000"]
+      - targets: ["api:8000"]
         labels: { component: api }

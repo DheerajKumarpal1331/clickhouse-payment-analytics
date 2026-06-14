@@ -8,4 +8,4 @@ data:
   CH_DB: {{ .Values.config.chDb | quote }}
   KAFKA_BOOTSTRAP: {{ .Values.config.kafkaBootstrap | quote }}
   MLFLOW_TRACKING_URI: {{ .Values.config.mlflowTrackingUri | quote }}
-  ANALYTICS_API: "http://analytics-api:8000"
+  ANALYTICS_API: "http://api:8000"

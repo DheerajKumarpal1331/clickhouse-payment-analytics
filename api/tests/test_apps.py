@@ -1,5 +1,5 @@
-"""App-wiring tests (no DB needed): each service imports, mounts /health +
-/metrics, and exposes its declared routes. Run:
+"""App-wiring tests (no DB needed): the unified API imports, mounts /health +
+/metrics, and exposes every domain's routes on one app. Run:
     python api/tests/test_apps.py    (needs fastapi + httpx)
 """
 from __future__ import annotations
@@ -16,26 +16,29 @@ def _routes(app):
     return {r.path for r in app.routes}
 
 
-def test_merchant_app():
-    from api.merchant_service.main import app
+def test_unified_app_health_and_metrics():
+    from api.main import app
     c = TestClient(app)
     assert c.get("/health").text == "ok"
+    assert c.get("/metrics").status_code == 200
+    assert c.get("/").json()["domains"] == ["fraud", "merchant", "analytics"]
+
+
+def test_merchant_routes_mounted():
+    from api.main import app
     assert {"/merchant", "/merchant/{merchant_code}", "/device",
-            "/device/{device_code}", "/customer/{customer_code}", "/metrics"} <= _routes(app)
+            "/device/{device_code}", "/customer/{customer_code}"} <= _routes(app)
 
 
-def test_analytics_app():
-    from api.analytics_service.main import app
+def test_analytics_routes_mounted():
+    from api.main import app
+    assert {"/kpi", "/dashboard/{name}"} <= _routes(app)
+
+
+def test_fraud_routes_mounted():
+    from api.main import app
     c = TestClient(app)
-    assert c.get("/health").status_code == 200
-    assert {"/kpi", "/dashboard/{name}", "/metrics"} <= _routes(app)
-
-
-def test_fraud_app():
-    from api.fraud_service.main import app
-    c = TestClient(app)
-    assert c.get("/health").status_code == 200
-    assert {"/score", "/features", "/model_info", "/metrics"} <= _routes(app)
+    assert {"/score", "/features", "/model_info"} <= _routes(app)
     # unknown model is graceful, not a crash
     assert c.get("/model_info").json()["loaded"] is False
 

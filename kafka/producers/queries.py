@@ -126,11 +126,13 @@ QUERIES: dict[str, Query] = {
         SELECT dm.device_code                                  AS device_id,
                COALESCE(m.merchant_code, '')                   AS merchant_id,
                dm.terminal_type::text                          AS terminal_type,
-               dm.status::text                                 AS status,
+               CASE WHEN dact.device_id IS NOT NULL
+                    THEN 'ACTIVE' ELSE 'INACTIVE' END          AS status,
                to_char(dm.updated_at, 'YYYY-MM-DD HH24:MI:SS') AS event_time,
                dm.id AS _id, dm.updated_at AS _wm
         FROM device.device_master dm
         LEFT JOIN device.device_assignment da ON da.device_id = dm.id AND da.released_at IS NULL
         LEFT JOIN merchant.merchant_master m ON m.id = da.merchant_id
+        LEFT JOIN device.device_activation dact ON dact.device_id = dm.id
         """, wm="dm.updated_at", idc="dm.id"),
 }

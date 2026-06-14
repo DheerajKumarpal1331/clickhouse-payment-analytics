@@ -28,9 +28,9 @@ env: ## Materialize .env from .env.$(ENV)
 	cp .env.$(ENV) .env
 	@echo "using .env.$(ENV)"
 
-up: env ## Start the platform (infra+monitoring+devtools; add PROFILE=...)
+up: env ## Start the platform (core infra + monitoring; add PROFILE=...)
 	$(COMPOSE) $(PROFILE_FLAG) up -d
-	@echo "Kafka UI :8080  Grafana :3000  MLflow :5000  pgAdmin :5050  CH-UI :5521  Jupyter :8888"
+	@echo "Dashboard :8050  API :8000/docs  Grafana :3000  MLflow :5000  Airflow :8082  Prometheus :9090"
 
 up-all: env ## Start everything (all profiles)
 	$(COMPOSE) --profile pipeline --profile apps --profile ml --profile airflow up -d

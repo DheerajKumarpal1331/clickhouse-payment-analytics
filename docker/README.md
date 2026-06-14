@@ -13,11 +13,11 @@ profiles**, so the default `up -d` always succeeds on a fresh checkout:
 
 | Command | Adds |
 |---|---|
-| `docker compose up -d` | postgres, clickhouse, zookeeper, kafka(+init,+ui), mlflow, prometheus, grafana, alertmanager, node-exporter, cadvisor, kafka/postgres exporters, pgadmin, clickhouse-ui, jupyter |
+| `docker compose up -d` | postgres, clickhouse, zookeeper, kafka(+init), mlflow, prometheus, grafana, alertmanager, kafka/postgres exporters, statsd-exporter |
 | `--profile pipeline` | kafka-producer, kafka-consumer (Phase 4) |
-| `--profile apps` | merchant-api, analytics-api, fraud-api, plotly-dashboard |
+| `--profile apps` | api (unified), plotly-dashboard |
 | `--profile ml` | feature-store, fraud-training, fraud-serving |
-| `--profile airflow` | redis, airflow-init, webserver, scheduler, worker, triggerer |
+| `--profile airflow` | airflow-init, webserver, scheduler (LocalExecutor) |
 
 `make up` / `make up-all` / `make down` / `make logs` / `make test` /
 `make seed-data` wrap these (see the root `Makefile`).
@@ -29,15 +29,12 @@ profiles**, so the default `up -d` always succeeds on a fresh checkout:
 | postgres | postgres:16 | 5432 | default |
 | clickhouse | clickhouse-server:24.3 | 8123 / 9000 | default |
 | zookeeper / kafka | confluent cp 7.6 | 2181 / 9092 | default |
-| kafka-ui | provectuslabs/kafka-ui | 8080 | default |
 | mlflow | build `docker/mlflow` | 5000 | default |
 | prometheus / alertmanager | prom images | 9090 / 9093 | default |
 | grafana | grafana 11 | 3000 | default |
-| node-exporter / cadvisor | prom / google | 9100 / 8085 | default |
 | kafka-exporter / postgres-exporter | community | 9308 / 9187 | default |
 | statsd-exporter | prom (Airflow bridge) | 9102 | default |
-| pgadmin / clickhouse-ui / jupyter | dev tools | 5050 / 5521 / 8888 | default |
-| merchant/analytics/fraud-api | build `docker/api` | 8001-8003 | apps |
+| api (unified: fraud/merchant/analytics) | build `docker/api` | 8000 | apps |
 | plotly-dashboard | build `docker/dashboard` | 8050 | apps |
 | airflow-web | apache/airflow | 8082 | airflow |
 
@@ -66,9 +63,9 @@ Each buildable service under `docker/<svc>/` carries a `Dockerfile`,
 
 The full observability stack lives under [`monitoring/`](../monitoring/) (Phase 11):
 Prometheus scrape config, alert rules, Alertmanager routing, the Airflow StatsD
-mapping, and Grafana provisioning + dashboards. Prometheus scrapes node-exporter,
-cadvisor, kafka-exporter, postgres-exporter, ClickHouse's native endpoint, the
-Airflow statsd-exporter, and (under profiles) the pipeline/API `/metrics`.
+mapping, and Grafana provisioning + dashboards. Prometheus scrapes
+kafka-exporter, postgres-exporter, ClickHouse's native endpoint, the Airflow
+statsd-exporter, and (under profiles) the pipeline/API `/metrics`.
 Grafana is provisioned with Prometheus + ClickHouse + Postgres datasources and
-seven dashboards (Platform Health, Data Freshness, ML Monitoring, plus Docker
-Health, Kafka, PostgreSQL, ClickHouse). See [`monitoring/README.md`](../monitoring/README.md).
+six dashboards (Platform Health, Data Freshness, ML Monitoring, Kafka,
+PostgreSQL, ClickHouse). See [`monitoring/README.md`](../monitoring/README.md).

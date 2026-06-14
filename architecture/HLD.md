@@ -55,6 +55,14 @@ serves a **< 100 ms** fraud score, and powers self-serve dashboards.
 | 9 | Orchestration | Apache Airflow | ETL, backfill, feature gen, retraining, DQ, monitoring |
 | 10 | Observability | Prometheus + Grafana | Metrics, dashboards, alert rules |
 
+> **Implementation note.** The reference deployment consolidates the FastAPI
+> services (components 1 & 7 + analytics) into a **single unified API** (`api/main.py`,
+> one container, routers per domain) for single-host simplicity — the logical
+> boundaries above are preserved as routers and can be split back into separate
+> services unchanged. Airflow runs the **LocalExecutor** (no Celery/Redis). A
+> continuous generator (`data_generator/live_postgres.py`) streams transactions
+> and onboards merchants into Postgres to drive the pipeline live.
+
 ---
 
 ## 4. Data flow (happy path)

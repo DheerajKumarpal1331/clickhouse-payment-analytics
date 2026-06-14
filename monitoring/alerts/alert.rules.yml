@@ -13,24 +13,6 @@ groups:
           summary: "Scrape target down: {{ $labels.job }}/{{ $labels.instance }}"
           description: "Prometheus cannot scrape {{ $labels.instance }} for 2m."
 
-      - alert: ContainerHighCPU
-        expr: sum(rate(container_cpu_usage_seconds_total{name=~"payments-.*"}[5m])) by (name) > 0.9
-        for: 5m
-        labels: { severity: warning }
-        annotations:
-          summary: "High CPU on {{ $labels.name }}"
-          description: "{{ $labels.name }} CPU > 90% for 5m."
-
-      - alert: ContainerHighMemory
-        expr: |
-          container_memory_usage_bytes{name=~"payments-.*"}
-            / container_spec_memory_limit_bytes{name=~"payments-.*"} > 0.9
-        for: 5m
-        labels: { severity: warning }
-        annotations:
-          summary: "High memory on {{ $labels.name }}"
-          description: "{{ $labels.name }} memory > 90% of its limit for 5m."
-
   # ------------------------------- KAFKA LAG ------------------------------
   - name: kafka
     rules:
@@ -84,10 +66,11 @@ groups:
 
       - alert: FraudApiLatencyHighP99
         # The real-time scoring path carries a tighter SLA (<100ms).
+        # Unified API: the fraud hot path is the /score route.
         expr: |
           histogram_quantile(
             0.99,
-            sum(rate(api_request_duration_seconds_bucket{service="fraud"}[5m])) by (le)
+            sum(rate(api_request_duration_seconds_bucket{route="/score"}[5m])) by (le)
           ) > 0.1
         for: 5m
         labels: { severity: critical }

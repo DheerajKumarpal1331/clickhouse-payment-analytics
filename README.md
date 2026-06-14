@@ -2,8 +2,25 @@
 
 A production-grade FinTech payment processing & analytics platform modelled on
 real Indian payment processors (UPI/NPCI rails, RBI MDR/GST regime, RuPay,
-T+1 settlement). Built phase by phase — this repo currently covers
-**Phases 0–11**.
+T+1 settlement). Built phase by phase — this repo covers **Phases 0–13**:
+OLTP → CDC streaming → ClickHouse OLAP → feature store → fraud ML → unified API
+→ live dashboards → orchestration → monitoring → testing → deployment.
+
+A continuous generator streams fresh transactions (and onboards merchants) into
+Postgres, so the whole pipeline — Postgres → Kafka → ClickHouse → dashboard —
+runs **live** end to end.
+
+## Live dashboards
+
+Five Plotly Dash operator dashboards over the ClickHouse warehouse, auto-refreshing
+every few seconds. Business economics (MDR, GST, net settlement) are computed with
+standard Indian rates.
+
+| Executive | Merchant |
+|---|---|
+| ![Executive](docs/screenshots/executive.png) | ![Merchant](docs/screenshots/merchant.png) |
+| **Fraud & Risk** | **Settlement** |
+| ![Fraud & Risk](docs/screenshots/fraud.png) | ![Settlement](docs/screenshots/settlement.png) |
 
 ## Phases in this repo
 
@@ -13,13 +30,13 @@ T+1 settlement). Built phase by phase — this repo currently covers
 | **0.5 — Containerization** | Full Docker Compose stack, IaC, monitoring, Makefile | [`docker/`](docker/), `docker-compose.yml`, `Makefile` |
 | **1 — System Design** | HLD · LLD · ERD · DFDs + 6 architecture diagrams (`.drawio`) | [`architecture/`](architecture/) |
 | **2 — PostgreSQL OLTP** | 11-domain 3NF schema, indexes, procedures, seed data, tests | [`postgres/`](postgres/) |
-| **3 — Synthetic Data Generation** | Merchant/customer/device/transaction/refund/fraud generators | [`data_generator/`](data_generator/) |
+| **3 — Synthetic Data Generation** | Merchant/customer/device/transaction generators + **continuous live Postgres feed** | [`data_generator/`](data_generator/) |
 | **4 — Kafka Streaming** | 8 event schemas, Postgres→Kafka producers, Kafka→ClickHouse consumers + DLQ | [`kafka/`](kafka/) |
 | **5 — ClickHouse OLAP** | 7 dims + 7 facts, materialized views, features, marts, optimization | [`clickhouse/`](clickhouse/) |
 | **6 — Feature Store** | Online/offline (PIT) feature pipelines over the warehouse | [`feature_store/`](feature_store/) |
 | **7 — Fraud ML** | Velocity feature engineering, training/evaluation, MLflow registry | [`ml/`](ml/) |
-| **8 — APIs** | 3 FastAPI services (fraud scoring, merchant, analytics) + shared layer | [`api/`](api/) |
-| **9 — Dashboards** | 5 Plotly Dash operator dashboards | [`dashboard/`](dashboard/) |
+| **8 — APIs** | Unified FastAPI service — fraud scoring · merchant · analytics domains + shared layer | [`api/`](api/) |
+| **9 — Dashboards** | 5 live auto-refreshing Plotly Dash dashboards (Executive/Merchant/Fraud/Settlement/Support) | [`dashboard/`](dashboard/) |
 | **10 — Orchestration** | 8 Airflow DAGs, custom operators/sensors, watermark CDC | [`airflow/`](airflow/) |
 | **11 — Monitoring** | Prometheus + Alertmanager + Grafana; Kafka lag / API latency / ClickHouse / Airflow | [`monitoring/`](monitoring/) |
 | **12 — Testing** | Unit (ETL/API/ML), integration (PG→Kafka, Kafka→CH, FS→Model), load (5000 ev/s, 100 users) | [`tests/`](tests/) |
@@ -40,13 +57,15 @@ Application layers (Kafka pipeline, APIs, dashboard, ML, Airflow) come up under
 
 ```bash
 docker compose --profile pipeline up -d   # Kafka producers/consumers (Phase 4)
-docker compose --profile apps up -d        # FastAPI services + Plotly dashboard
+docker compose --profile apps up -d        # unified API + Plotly dashboard
 docker compose --profile ml up -d          # feature store + fraud train/serve
-docker compose --profile airflow up -d     # orchestration
+docker compose --profile airflow up -d     # orchestration (LocalExecutor)
 ```
 
-UIs: Kafka UI `:8080` · Grafana `:3000` · MLflow `:5000` · pgAdmin `:5050` ·
-ClickHouse UI `:5521` · Jupyter `:8888` · Prometheus `:9090`. See
+UIs: Plotly Dashboard `:8050` · API docs `:8000/docs` · Grafana `:3000` ·
+MLflow `:5000` · Prometheus `:9090` · Airflow `:8082`. The stack is deliberately
+lean — Grafana is the single operations pane (Prometheus + ClickHouse datasources)
+and ClickHouse SQL is reachable on `:8123`. See
 [`deployment/README.md`](deployment/README.md).
 
 ### Without Docker (individual phases)
@@ -74,10 +93,10 @@ python data_generator/generate.py historical \
   validated live (201 rows Postgres → ClickHouse, cursor advanced), and the
   data-quality operator runs its contracts across both ClickHouse and Postgres.
   See [`airflow/README.md`](airflow/README.md).
-- **Phase 11** — monitoring validated live: `promtool` accepts all 17 alert rules
-  and the scrape config; Prometheus targets healthy for ClickHouse, Postgres,
-  cadvisor and the Airflow statsd-exporter; Grafana provisions all three
-  datasources (Prometheus/ClickHouse/Postgres health OK) and seven dashboards,
+- **Phase 11** — monitoring validated live: `promtool` accepts the alert rules
+  and scrape config; Prometheus targets healthy for ClickHouse, Postgres,
+  Kafka and the Airflow statsd-exporter; Grafana provisions all three
+  datasources (Prometheus/ClickHouse/Postgres health OK) and six dashboards,
   and every Data-Freshness / ML-Monitoring SQL runs against the live schema.
   See [`monitoring/README.md`](monitoring/README.md).
 - **Phase 12** — **39 unit tests pass** (ETL/API/ML, no infra); all **9
@@ -88,5 +107,5 @@ python data_generator/generate.py historical \
   on the fraud-scoring API. See [`tests/README.md`](tests/README.md).
 - **Phase 13** — deployment artifacts validated: the raw manifests render via
   `kubectl kustomize` to **32 resources**, and the Helm chart passes `helm lint`
-  and `helm template` (**27 resources**, with the fraud-api HPA and the
+  and `helm template` (**23 resources**, with the unified-API HPA and the
   external-Secret toggle exercised). See [`deployment/README.md`](deployment/README.md).

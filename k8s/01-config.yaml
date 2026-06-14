@@ -16,4 +16,4 @@ data:
   CH_DB: payments
   KAFKA_BOOTSTRAP: kafka:9092
   MLFLOW_TRACKING_URI: http://mlflow:5000
-  ANALYTICS_API: http://analytics-api:8000
+  ANALYTICS_API: http://api:8000

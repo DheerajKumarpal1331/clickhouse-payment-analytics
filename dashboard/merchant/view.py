@@ -1,60 +1,70 @@
-"""Merchant dashboard — Merchant Growth, RFM segmentation, Churn Risk."""
+"""Merchant dashboard — live acquiring view: active & newly-onboarded merchants,
+top performers by volume, channel mix, and daily active trend. All live off
+fact_transactions (fed by the transaction + merchant-onboarding generators)."""
 from __future__ import annotations
 
 import plotly.graph_objects as go
 from dash import dcc, html
 
 from dashboard import data
-from dashboard.theme import (COLORS, empty_note, kpi_card, kpi_row, panel, style_fig)
-
-# A merchant is churn-risk if it hasn't transacted in this many days.
-CHURN_DAYS = 14
+from dashboard.theme import (COLORS, data_table, empty_note, fmt_inr, fmt_num,
+                             grid, kpi_card, kpi_row, panel, style_fig)
 
 
 def layout(days: int = 30):
-    growth = data.merchant_growth()
-    rfm = data.merchant_rfm()
-
-    total = len(rfm) if not rfm.empty else 0
-    champions = int((rfm["segment"] == "Champions").sum()) if not rfm.empty else 0
-    at_risk = int((rfm["recency"] > CHURN_DAYS).sum()) if not rfm.empty else 0
-    churn_pct = (at_risk / total * 100) if total else 0
+    s = data.merchant_summary(days)
+    top = data.top_merchants(days, 10)
+    daily = data.merchant_daily_active(days)
+    chan = data.channel_mix(days)
 
     cards = kpi_row([
-        kpi_card("Merchants Analyzed", f"{total:,}", "with activity", COLORS["accent"]),
-        kpi_card("Champions (RFM)", f"{champions:,}", "high R+F", COLORS["good"]),
-        kpi_card("Churn Risk", f"{at_risk:,}", f"no txns >{CHURN_DAYS}d", COLORS["bad"]),
-        kpi_card("Churn Rate", f"{churn_pct:.1f}%", "of active base", COLORS["warn"]),
+        kpi_card("Active Merchants", f"{s['active']:,}", f"last {days} days", COLORS["accent"]),
+        kpi_card("Active Today", f"{s['active_today']:,}", "transacting today", COLORS["cyan"]),
+        kpi_card("New Merchants", f"{s['new_today']:,}", "first txn today", COLORS["good"]),
+        kpi_card("Avg Ticket", fmt_inr(s["avg_ticket"]), "per transaction", COLORS["violet"]),
     ])
 
-    children = [cards]
+    body = [cards]
 
-    if not growth.empty:
-        g = go.Figure()
-        g.add_bar(x=growth["month"], y=growth["active_merchants"], name="Active merchants",
-                  marker_color=COLORS["accent"])
-        g.update_layout(title="Merchant Growth (active per month)")
-        children.append(panel("Merchant Growth", dcc.Graph(figure=style_fig(g))))
+    lead = go.Figure()
+    if not top.empty:
+        lead.add_bar(y=top["merchant_id"][::-1], x=top["tpv"][::-1], orientation="h",
+                     marker_color=COLORS["accent"], marker_line_width=0)
+        lead.update_layout(title="Top Merchants by TPV (₹)")
+    style_fig(lead, 360)
 
-    if not rfm.empty:
-        seg = rfm["segment"].value_counts().reset_index()
-        seg.columns = ["segment", "count"]
-        sfig = go.Figure(go.Bar(x=seg["segment"], y=seg["count"],
-                                marker_color=COLORS["series"]))
-        sfig.update_layout(title="RFM Segments")
+    chanfig = go.Figure()
+    if not chan.empty:
+        chanfig.add_pie(labels=chan["channel"], values=chan["volume"], hole=0.6,
+                        marker=dict(colors=COLORS["series"]), textinfo="label+percent")
+    chanfig.update_layout(title="Volume by Channel", showlegend=False)
+    style_fig(chanfig, 360)
 
-        scat = go.Figure(go.Scatter(
-            x=rfm["frequency"], y=rfm["monetary"], mode="markers",
-            marker=dict(size=8, color=rfm["recency"], colorscale="Viridis_r",
-                        showscale=True, colorbar=dict(title="Recency(d)")),
-            text=rfm["segment"]))
-        scat.update_layout(title="Frequency vs Monetary (color = recency)",
-                           xaxis_title="Frequency (txns)", yaxis_title="Monetary (₹)")
-        children.append(html.Div(style={"display": "flex", "gap": "16px"}, children=[
-            html.Div(panel("Segments", dcc.Graph(figure=style_fig(sfig))), style={"flex": 1}),
-            html.Div(panel("RFM Scatter", dcc.Graph(figure=style_fig(scat))), style={"flex": 1}),
-        ]))
+    body.append(grid([
+        panel("Merchant Leaderboard", dcc.Graph(figure=lead, config={"displayModeBar": False})),
+        panel("Channel Mix", dcc.Graph(figure=chanfig, config={"displayModeBar": False})),
+    ], template="1.5fr 1fr"))
+
+    if not daily.empty:
+        act = go.Figure()
+        act.add_bar(x=daily["date"], y=daily["merchants"], name="Active merchants",
+                    marker_color=COLORS["good"], opacity=0.85, marker_line_width=0)
+        act.add_scatter(x=daily["date"], y=daily["txns"], name="Txns", yaxis="y2",
+                        mode="lines", line=dict(color=COLORS["accent"], width=2.5, shape="spline"))
+        act.update_layout(title="Daily Active Merchants & Transactions",
+                          yaxis2=dict(overlaying="y", side="right", showgrid=False))
+        style_fig(act, 320)
+        body.append(panel("Activity Trend",
+                          dcc.Graph(figure=act, config={"displayModeBar": False})))
+
+    if not top.empty:
+        tbl = top.copy()
+        tbl["tpv"] = tbl["tpv"].map(fmt_inr)
+        tbl["txns"] = tbl["txns"].map(fmt_num)
+        tbl["success"] = tbl["success"].map(lambda v: f"{v:.1f}%")
+        body.append(panel("Top Merchants — detail",
+                          data_table(tbl, ["merchant_id", "txns", "tpv", "success"])))
     else:
-        children.append(panel("RFM", empty_note()))
+        body.append(panel("Merchants", empty_note()))
 
-    return html.Div(children)
+    return html.Div(body)

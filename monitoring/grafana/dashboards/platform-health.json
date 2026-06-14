@@ -47,39 +47,40 @@
       "targets": [ { "refId": "A", "expr": "sum(kafka_consumergroup_lag) or vector(0)" } ]
     },
     {
-      "id": 5, "type": "timeseries", "title": "Container CPU (cores)",
+      "id": 5, "type": "timeseries", "title": "API p99 latency by route",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [ { "refId": "A",
-        "expr": "sum(rate(container_cpu_usage_seconds_total{name=~\"payments-.*\"}[5m])) by (name)",
-        "legendFormat": "{{name}}" } ]
+        "expr": "histogram_quantile(0.99, sum(rate(api_request_duration_seconds_bucket[5m])) by (le, route))",
+        "legendFormat": "{{route}}" } ]
     },
     {
-      "id": 6, "type": "timeseries", "title": "Container memory (bytes)",
+      "id": 6, "type": "timeseries", "title": "API request rate by route",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
       "targets": [ { "refId": "A",
-        "expr": "container_memory_usage_bytes{name=~\"payments-.*\"}",
-        "legendFormat": "{{name}}" } ]
+        "expr": "sum(rate(api_requests_total[5m])) by (route)",
+        "legendFormat": "{{route}}" } ]
     },
     {
-      "id": 7, "type": "timeseries", "title": "API p99 latency by service",
+      "id": 7, "type": "timeseries", "title": "Fraud /score p99 latency (SLA <100ms)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [ { "refId": "A",
-        "expr": "histogram_quantile(0.99, sum(rate(api_request_duration_seconds_bucket[5m])) by (le, service))",
-        "legendFormat": "{{service}}" } ]
+        "expr": "histogram_quantile(0.99, sum(rate(api_request_duration_seconds_bucket{route=\"/score\"}[5m])) by (le))",
+        "legendFormat": "p99 /score" } ]
     },
     {
-      "id": 8, "type": "timeseries", "title": "API request rate by service",
+      "id": 8, "type": "timeseries", "title": "API 5xx error rate",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
       "targets": [ { "refId": "A",
-        "expr": "sum(rate(api_requests_total[5m])) by (service)",
-        "legendFormat": "{{service}}" } ]
+        "expr": "sum(rate(api_requests_total{status=~\"5..\"}[5m])) / sum(rate(api_requests_total[5m])) or vector(0)",
+        "legendFormat": "5xx ratio" } ]
     },
     {
       "id": 9, "type": "timeseries", "title": "Kafka consumer lag by topic",

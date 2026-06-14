@@ -57,7 +57,7 @@ defaulting to the `.env.dev` / compose values.
 ```bash
 # 100 concurrent users (apps profile up):
 RUN_LOAD=1 RUN_INTEGRATION=1 pytest -c tests/pytest.ini tests/load/kafka_load.py
-locust -f tests/load/locustfile.py --host http://localhost:8003 \
+locust -f tests/load/locustfile.py --host http://localhost:8000 \
        --users 100 --spawn-rate 20 --run-time 2m
 
 # 5000 events/sec ingest benchmark:

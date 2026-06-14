@@ -6,11 +6,11 @@ SLOs (fraud target <100ms) under concurrency.
 
 Run (with the `apps` profile up):
     pip install -r tests/requirements.txt
-    locust -f tests/load/locustfile.py --host http://localhost:8003 \
+    locust -f tests/load/locustfile.py --host http://localhost:8000 \
            --users 100 --spawn-rate 20 --run-time 2m
 
-Hosts (per docker-compose port map): fraud-api :8003, merchant-api :8001,
-analytics-api :8002. FRAUD_HOST / MERCHANT_HOST / ANALYTICS_HOST override.
+All three domains (fraud / merchant / analytics) are served by the unified
+`api` container on :8000. API_HOST overrides.
 """
 from __future__ import annotations
 
@@ -19,9 +19,7 @@ import random
 
 from locust import HttpUser, between, task
 
-FRAUD_HOST = os.getenv("FRAUD_HOST", "http://localhost:8003")
-MERCHANT_HOST = os.getenv("MERCHANT_HOST", "http://localhost:8001")
-ANALYTICS_HOST = os.getenv("ANALYTICS_HOST", "http://localhost:8002")
+API_HOST = os.getenv("API_HOST", "http://localhost:8000")
 
 _MERCHANTS = [f"M{i}" for i in range(1, 51)]
 _CUSTOMERS = [f"C{i}" for i in range(1, 201)]
@@ -43,7 +41,7 @@ def _score_payload() -> dict:
 
 class FraudUser(HttpUser):
     """Checkout hot path — the latency-critical SLO (<100ms p99)."""
-    host = FRAUD_HOST
+    host = API_HOST
     weight = 6
     wait_time = between(0.1, 0.5)
 
@@ -61,7 +59,7 @@ class FraudUser(HttpUser):
 
 
 class MerchantUser(HttpUser):
-    host = MERCHANT_HOST
+    host = API_HOST
     weight = 2
     wait_time = between(0.2, 1.0)
 
@@ -72,7 +70,7 @@ class MerchantUser(HttpUser):
 
 
 class AnalyticsUser(HttpUser):
-    host = ANALYTICS_HOST
+    host = API_HOST
     weight = 2
     wait_time = between(0.5, 2.0)
 

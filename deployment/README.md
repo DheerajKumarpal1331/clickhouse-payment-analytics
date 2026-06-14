@@ -22,15 +22,19 @@ docker compose --profile airflow up -d    # orchestration
 
 ### UIs
 
+The stack is deliberately lean — Grafana is the single operations pane
+(Prometheus + ClickHouse + Postgres datasources), so there are no extra
+DB/Kafka browser UIs to babysit. ClickHouse SQL is reachable on `:8123`.
+
 | URL | What |
 |---|---|
-| http://localhost:8080 | Kafka UI |
+| http://localhost:8050 | Plotly dashboard (live) |
+| http://localhost:8000/docs | Unified API (fraud / merchant / analytics) |
 | http://localhost:3000 | Grafana (admin/admin) |
 | http://localhost:5000 | MLflow |
-| http://localhost:5050 | pgAdmin |
-| http://localhost:5521 | ClickHouse UI |
-| http://localhost:8888 | JupyterLab (token: `payments`) |
+| http://localhost:8082 | Airflow (airflow/airflow) |
 | http://localhost:9090 | Prometheus |
+| http://localhost:9093 | Alertmanager |
 
 ## Environments
 
@@ -61,14 +65,14 @@ definitions:
 
 - **[`k8s/`](../k8s/)** — raw manifests, `kubectl apply -k k8s/`. Namespace,
   ConfigMap/Secret, Postgres/ClickHouse/Kafka/ZooKeeper `StatefulSet`s, MLflow,
-  the three FastAPI `Deployment`s (+ fraud-api `HPA` 3→12), Dash, a minimal
-  Airflow, Prometheus/Grafana, and an `Ingress`. Validated: `kubectl kustomize`
-  renders 32 resources.
+  the unified API `Deployment` (+ `HPA` 3→12 for the fraud hot path), Dash, a
+  minimal Airflow, Prometheus/Grafana, and an `Ingress`. Validated:
+  `kubectl kustomize` renders 28 resources.
 - **[`helm/payment-analytics`](../helm/)** — the same topology as one
   values-driven chart (`helm install payments ./helm/payment-analytics`).
   Per-component `enabled` toggles, an `apis[]` list (each with optional `hpa`),
   chart-managed or external Secret. Validated: `helm lint` clean, `helm template`
-  renders 27 resources.
+  renders 23 resources.
 
 For production, disable the bundled stateful stores and use managed services /
 operators (the swaps above); the chart and manifests stay the deployment

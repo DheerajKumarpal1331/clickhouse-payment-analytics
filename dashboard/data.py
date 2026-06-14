@@ -1,7 +1,14 @@
-"""Data access for the dashboards — queries the ClickHouse marts/views (Phase 5)
-and returns pandas DataFrames. Stdlib HTTP client (no driver). Every query is
-wrapped so a missing/empty table yields an empty frame rather than a 500, so
-pages always render.
+"""Data access for the dashboards — queries ClickHouse and returns pandas
+DataFrames. Stdlib HTTP client (no driver). Every query is wrapped so a
+missing/empty table yields an empty frame rather than a 500, so pages always
+render.
+
+Most panels read the **live** `fact_transactions` directly (the stream the
+generator feeds), aggregating with the fields the live event carries: amount,
+is_success, fraud_label, payment_method, channel, mcc, merchant_id,
+response_code. Business economics (MDR, GST, net settlement) are computed
+in-query with standard Indian rates, since the heavy enrichment columns are
+only populated for batch-loaded history.
 
 ClickHouse serializes UInt64/Decimal as JSON strings to keep precision, so the
 helpers coerce numeric columns explicitly.
@@ -17,6 +24,17 @@ import pandas as pd
 
 CH_URL = os.getenv("CH_URL", "http://analytics:analytics_secret@localhost:8123")
 CH_DB = os.getenv("CH_DB", "payments")
+
+GST = 0.18  # GST on payment fees
+
+# Method-aware blended MDR (fraction of amount). Computed in-query so revenue is
+# meaningful even though live events don't carry mdr_amount.
+MDR = ("multiIf(payment_method='credit_card',0.0180,"
+       "payment_method='emi',0.0200,"
+       "payment_method='wallet',0.0150,"
+       "payment_method='netbanking',0.0120,"
+       "payment_method='debit_card',0.0090,"
+       "0.0040)")  # upi / qr / default
 
 
 def _endpoint() -> tuple[str, dict]:
@@ -46,98 +64,214 @@ def q(sql: str, numeric: list[str] | None = None) -> pd.DataFrame:
     return df
 
 
-# ----------------------------------------------------------------- executive
-def exec_kpis(days: int = 30) -> dict:
-    df = q(f"""SELECT sum(transactions) t, sum(tpv) tpv, sum(revenue) rev,
-                      max(active_merchants) am, sum(fraud_txns) fr
-               FROM {CH_DB}.mart_executive_kpis WHERE event_date >= today()-{days}""",
-           ["t", "tpv", "rev", "am", "fr"])
+def _one(df: pd.DataFrame, defaults: dict) -> dict:
     if df.empty:
-        return {"transactions": 0, "tpv": 0, "revenue": 0, "active_merchants": 0, "fraud_txns": 0}
+        return dict(defaults)
     r = df.iloc[0]
-    return {"transactions": int(r.t or 0), "tpv": float(r.tpv or 0), "revenue": float(r.rev or 0),
-            "active_merchants": int(r.am or 0), "fraud_txns": int(r.fr or 0)}
+    return {k: (float(r[k]) if r.get(k) is not None else v) for k, v in defaults.items()}
+
+
+# ------------------------------------------------------------------ realtime
+# Driven by `ingested_at` (when rows land), so these tick live with the stream.
+def realtime_pulse(minutes: int = 5) -> dict:
+    df = q(f"""SELECT count() txns, sum(amount) tpv,
+                      avg(is_success) success_rate, sum(fraud_label) fraud
+               FROM {CH_DB}.fact_transactions
+               WHERE ingested_at >= now() - INTERVAL {minutes} MINUTE""",
+           ["txns", "tpv", "success_rate", "fraud"])
+    return {**_one(df, {"tpv": 0.0, "success_rate": 0.0}),
+            "txns": int(_one(df, {"txns": 0})["txns"]),
+            "fraud": int(_one(df, {"fraud": 0})["fraud"])}
+
+
+def ingest_trend(minutes: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT toString(toStartOfMinute(ingested_at)) minute,
+                        count() txns, round(sum(amount)) tpv
+                 FROM {CH_DB}.fact_transactions
+                 WHERE ingested_at >= now() - INTERVAL {minutes} MINUTE
+                 GROUP BY minute ORDER BY minute""", ["txns", "tpv"])
+
+
+def recent_transactions(limit: int = 12) -> pd.DataFrame:
+    return q(f"""SELECT formatDateTime(ingested_at,'%H:%i:%S') time, merchant_id,
+                        round(amount,2) amount, payment_method method,
+                        if(is_success=1,'✓','✗') ok, fraud_label fraud
+                 FROM {CH_DB}.fact_transactions
+                 ORDER BY ingested_at DESC LIMIT {limit}""", ["amount", "fraud"])
+
+
+# ----------------------------------------------------------------- executive
+def exec_summary(days: int = 30) -> dict:
+    df = q(f"""SELECT count() txns, sum(amount) tpv,
+                      sum(amount*{MDR}) revenue,
+                      avg(is_success) success_rate,
+                      countIf(is_success=0) declined,
+                      uniqExact(merchant_id) merchants,
+                      avg(amount) avg_ticket
+               FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}""",
+           ["txns", "tpv", "revenue", "success_rate", "declined", "merchants", "avg_ticket"])
+    d = _one(df, {"tpv": 0.0, "revenue": 0.0, "success_rate": 0.0,
+                  "avg_ticket": 0.0})
+    d["txns"] = int(_one(df, {"txns": 0})["txns"])
+    d["declined"] = int(_one(df, {"declined": 0})["declined"])
+    d["merchants"] = int(_one(df, {"merchants": 0})["merchants"])
+    return d
 
 
 def exec_timeseries(days: int = 30) -> pd.DataFrame:
-    return q(f"""SELECT toString(event_date) date, transactions, round(tpv) tpv,
-                        round(success_rate,4) success_rate, active_merchants
-                 FROM {CH_DB}.mart_executive_kpis WHERE event_date >= today()-{days} ORDER BY event_date""",
-             ["transactions", "tpv", "success_rate", "active_merchants"])
+    return q(f"""SELECT toString(event_date) date, count() transactions,
+                        round(sum(amount)) tpv, round(sum(amount*{MDR})) revenue,
+                        round(avg(is_success),4) success_rate
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY event_date ORDER BY event_date""",
+             ["transactions", "tpv", "revenue", "success_rate"])
 
 
 def method_mix(days: int = 30) -> pd.DataFrame:
-    return q(f"""SELECT payment_method, sum(txns) txns, round(sum(volume)) volume
-                 FROM {CH_DB}.mart_method_mix WHERE event_date >= today()-{days}
+    return q(f"""SELECT payment_method, count() txns, round(sum(amount)) volume
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
                  GROUP BY payment_method ORDER BY volume DESC""", ["txns", "volume"])
 
 
+def hourly_volume(hours: int = 24) -> pd.DataFrame:
+    return q(f"""SELECT toString(toStartOfHour(event_time)) hour, count() txns,
+                        round(sum(amount)) tpv
+                 FROM {CH_DB}.fact_transactions
+                 WHERE event_time >= now() - INTERVAL {hours} HOUR
+                 GROUP BY hour ORDER BY hour""", ["txns", "tpv"])
+
+
 # ------------------------------------------------------------------ merchant
-def merchant_growth() -> pd.DataFrame:
-    return q(f"""SELECT toString(month) month, uniqExact(merchant_id) active_merchants,
-                        sum(txns) txns FROM {CH_DB}.merchant_monthly_summary
-                 GROUP BY month ORDER BY month""", ["active_merchants", "txns"])
+def merchant_summary(days: int = 30) -> dict:
+    df = q(f"""SELECT uniqExact(merchant_id) active,
+                      uniqExactIf(merchant_id, event_date=today()) active_today,
+                      round(avg(amount)) avg_ticket,
+                      round(sum(amount)) tpv
+               FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}""",
+           ["active", "active_today", "avg_ticket", "tpv"])
+    d = _one(df, {"avg_ticket": 0.0, "tpv": 0.0})
+    d["active"] = int(_one(df, {"active": 0})["active"])
+    d["active_today"] = int(_one(df, {"active_today": 0})["active_today"])
+    # merchants whose first-ever transaction is today (newly live)
+    nf = q(f"""SELECT count() n FROM (
+                 SELECT merchant_id, min(event_date) f
+                 FROM {CH_DB}.fact_transactions GROUP BY merchant_id
+                 HAVING f = today())""", ["n"])
+    d["new_today"] = int(_one(nf, {"n": 0})["n"])
+    return d
 
 
-def merchant_rfm() -> pd.DataFrame:
-    df = q(f"""SELECT merchant_id, dateDiff('day', max(event_date), today()) recency,
-                      sum(txns) frequency, sum(gross_amount) monetary
-               FROM {CH_DB}.merchant_daily_summary GROUP BY merchant_id""",
-           ["recency", "frequency", "monetary"])
-    if df.empty:
-        return df
-    # RFM scoring (1-5 quintiles); recency reversed (recent = high score)
-    for col, asc in (("recency", False), ("frequency", True), ("monetary", True)):
-        try:
-            df[col[0].upper()] = pd.qcut(df[col].rank(method="first"), 5,
-                                         labels=[1, 2, 3, 4, 5] if asc else [5, 4, 3, 2, 1]).astype(int)
-        except Exception:
-            df[col[0].upper()] = 3
-    df["rfm"] = df.R.astype(str) + df.F.astype(str) + df.M.astype(str)
-    df["segment"] = df.apply(_rfm_segment, axis=1)
-    return df
+def top_merchants(days: int = 30, limit: int = 10) -> pd.DataFrame:
+    return q(f"""SELECT merchant_id, count() txns, round(sum(amount)) tpv,
+                        round(avg(is_success)*100,1) success
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY merchant_id ORDER BY tpv DESC LIMIT {limit}""",
+             ["txns", "tpv", "success"])
 
 
-def _rfm_segment(r) -> str:
-    if r.R >= 4 and r.F >= 4:
-        return "Champions"
-    if r.F >= 4:
-        return "Loyal"
-    if r.R >= 4:
-        return "Recent"
-    if r.R <= 2 and r.F <= 2:
-        return "At Risk"
-    return "Needs Attention"
+def merchant_daily_active(days: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT toString(event_date) date, uniqExact(merchant_id) merchants,
+                        count() txns
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY event_date ORDER BY event_date""", ["merchants", "txns"])
+
+
+def channel_mix(days: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT channel, count() txns, round(sum(amount)) volume
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY channel ORDER BY volume DESC""", ["txns", "volume"])
 
 
 # --------------------------------------------------------------------- fraud
-def fraud_daily(days: int = 30) -> pd.DataFrame:
-    return q(f"""SELECT toString(event_date) date, txns, fraud_txns, round(fraud_rate,4) fraud_rate,
-                        round(fraud_loss) fraud_loss, round(decline_rate,4) decline_rate
-                 FROM {CH_DB}.mart_fraud_daily WHERE event_date >= today()-{days} ORDER BY event_date""",
-             ["txns", "fraud_txns", "fraud_rate", "fraud_loss", "decline_rate"])
+def fraud_summary(days: int = 30) -> dict:
+    df = q(f"""SELECT count() txns, sum(fraud_label) fraud,
+                      sumIf(amount, fraud_label=1) fraud_loss,
+                      countIf(is_success=0) declined,
+                      avgIf(1, fraud_label=1) dummy
+               FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}""",
+           ["txns", "fraud", "fraud_loss", "declined"])
+    txns = int(_one(df, {"txns": 0})["txns"])
+    fraud = int(_one(df, {"fraud": 0})["fraud"])
+    declined = int(_one(df, {"declined": 0})["declined"])
+    loss = _one(df, {"fraud_loss": 0.0})["fraud_loss"]
+    return {"txns": txns, "fraud": fraud, "fraud_loss": loss, "declined": declined,
+            "fraud_rate": (fraud / txns * 100) if txns else 0.0,
+            "decline_rate": (declined / txns * 100) if txns else 0.0}
 
 
-def fraud_scores(days: int = 30) -> pd.DataFrame:
-    return q(f"""SELECT risk_level, sum(scored) scored, round(avg(avg_score),4) avg_score
-                 FROM {CH_DB}.mart_fraud_scores WHERE event_date >= today()-{days}
-                 GROUP BY risk_level""", ["scored", "avg_score"])
+def fraud_trend(days: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT toString(event_date) date, sum(fraud_label) fraud_txns,
+                        round(sum(fraud_label)/count()*100,3) fraud_rate,
+                        round(sumIf(amount, fraud_label=1)) fraud_loss
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY event_date ORDER BY event_date""",
+             ["fraud_txns", "fraud_rate", "fraud_loss"])
+
+
+def fraud_by_method(days: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT payment_method, sum(fraud_label) fraud,
+                        round(sum(fraud_label)/count()*100,3) rate
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY payment_method ORDER BY fraud DESC""", ["fraud", "rate"])
+
+
+def decline_reasons(days: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT response_code, count() declines
+                 FROM {CH_DB}.fact_transactions
+                 WHERE event_date >= today()-{days} AND is_success=0 AND response_code != ''
+                 GROUP BY response_code ORDER BY declines DESC LIMIT 8""", ["declines"])
 
 
 # ---------------------------------------------------------------- settlement
-def settlement_daily(days: int = 30) -> pd.DataFrame:
-    return q(f"""SELECT toString(cycle_date) date, txns, round(net_settled) net,
-                        failed_batches, round(avg_tat_minutes) tat
-                 FROM {CH_DB}.mart_settlement_daily WHERE cycle_date >= today()-{days} ORDER BY cycle_date""",
-             ["txns", "net", "failed_batches", "tat"])
+# Settlement economics computed from successful transactions (T+1 model):
+# net to merchant = gross − (MDR + GST on MDR).
+def settlement_summary(days: int = 30) -> dict:
+    df = q(f"""SELECT round(sumIf(amount, is_success=1)) gross,
+                      round(sumIf(amount*{MDR}, is_success=1)) mdr,
+                      round(sumIf(amount*{MDR}*{GST}, is_success=1)) gst,
+                      round(sumIf(amount, is_success=1 AND event_date=today())) pending
+               FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}""",
+           ["gross", "mdr", "gst", "pending"])
+    d = _one(df, {"gross": 0.0, "mdr": 0.0, "gst": 0.0, "pending": 0.0})
+    d["net"] = d["gross"] - d["mdr"] - d["gst"]
+    d["fees"] = d["mdr"] + d["gst"]
+    return d
+
+
+def settlement_trend(days: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT toString(event_date) date,
+                        round(sumIf(amount, is_success=1)) gross,
+                        round(sumIf(amount - amount*{MDR}*(1+{GST}), is_success=1)) net,
+                        round(sumIf(amount*{MDR}*(1+{GST}), is_success=1)) fees
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY event_date ORDER BY event_date""", ["gross", "net", "fees"])
+
+
+def settlement_by_method(days: int = 30) -> pd.DataFrame:
+    return q(f"""SELECT payment_method,
+                        round(sumIf(amount, is_success=1)) gross,
+                        round(sumIf(amount*{MDR}*(1+{GST}), is_success=1)) fees
+                 FROM {CH_DB}.fact_transactions WHERE event_date >= today()-{days}
+                 GROUP BY payment_method ORDER BY gross DESC""", ["gross", "fees"])
 
 
 # ------------------------------------------------------------------- support
+def support_summary(days: int = 30) -> dict:
+    df = q(f"""SELECT count() tickets, sumIf(1, sla_breached=1) breached,
+                      uniqExact(category) categories
+               FROM {CH_DB}.fact_support_events WHERE event_time >= today()-{days}""",
+           ["tickets", "breached", "categories"])
+    t = int(_one(df, {"tickets": 0})["tickets"])
+    b = int(_one(df, {"breached": 0})["breached"])
+    return {"tickets": t, "breached": b, "categories": int(_one(df, {"categories": 0})["categories"]),
+            "sla": (1 - b / t) * 100 if t else 100.0}
+
+
 def support_daily(days: int = 30) -> pd.DataFrame:
     return q(f"""SELECT toString(toDate(event_time)) date, count() tickets,
-                        sumIf(1, sla_breached=1) breached, uniqExact(category) categories
+                        sumIf(1, sla_breached=1) breached
                  FROM {CH_DB}.fact_support_events WHERE event_time >= today()-{days}
-                 GROUP BY toDate(event_time) ORDER BY date""", ["tickets", "breached", "categories"])
+                 GROUP BY toDate(event_time) ORDER BY date""", ["tickets", "breached"])
 
 
 def support_by_category(days: int = 30) -> pd.DataFrame:

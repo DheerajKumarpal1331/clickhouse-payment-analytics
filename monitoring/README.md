@@ -33,7 +33,7 @@ monitoring/
 | Concern | Source | Where it shows up |
 |---|---|---|
 | **Kafka lag** | `kafka-exporter` (`kafka_consumergroup_lag`) + the pipeline apps' own `consumer_lag` / `events_*_total` | `KafkaConsumerLagHigh`, `KafkaConsumerStalled`, `KafkaDLQGrowing`; Platform Health |
-| **API latency** | the three FastAPI services' `/metrics` — `api_request_duration_seconds` histogram | `ApiLatencyHighP99`, `FraudApiLatencyHighP99` (<100ms SLA), `ApiErrorRateHigh`; Platform Health, ML Monitoring |
+| **API latency** | the unified API's `/metrics` — `api_request_duration_seconds` histogram (labeled by `route`) | `ApiLatencyHighP99`, `FraudApiLatencyHighP99` (route `/score`, <100ms SLA), `ApiErrorRateHigh`; Platform Health, ML Monitoring |
 | **ClickHouse queries** | ClickHouse native Prometheus endpoint (`:9363`) — `ClickHouseProfileEvents_*`, `ClickHouseMetrics_*` | `ClickHouseTooManyParts`, `ClickHouseFailedQueries`, `ClickHouseQueriesBacklog`; Platform Health |
 | **Airflow health** | Airflow StatsD → `statsd-exporter` → Prometheus (`airflow_*`) | `AirflowSchedulerDown`, `AirflowDagImportErrors`, `AirflowTaskFailuresSpiking`, `AirflowPoolStarving`; Platform Health |
 

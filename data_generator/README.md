@@ -2,8 +2,9 @@
 
 Generates a realistic Indian payment ecosystem — merchants, customers, POS
 devices, and transactions with downstream refunds & chargebacks — at portfolio
-scale. Output is either **Parquet** (for ClickHouse backfill) or a live **Kafka**
-stream.
+scale. Output is **Parquet** (for ClickHouse backfill), a live **Kafka** stream,
+or a continuous **Postgres** feed (`live_postgres.py`) that drives the whole
+pipeline end-to-end.
 
 ## Modules (Phase 3 deliverables)
 
@@ -52,6 +53,22 @@ python generate.py historical --transactions 100000 --days 30 \
 # full portfolio scale, parallelized
 python generate.py historical --transactions 100_000_000 --days 1095 \
     --merchants 100000 --customers 5000000 --out ./data --workers 8
+```
+
+### Continuous live feed → Postgres (`live_postgres.py`)
+
+Drives the platform **live**: streams fresh transactions into
+`txn.transaction_header` and periodically onboards new merchants into
+`merchant.merchant_master`, sampling existing FK keys. The watermark-CDC
+producer carries these to Kafka → ClickHouse → the dashboards.
+
+```bash
+# standalone (≈32 txns/sec, a new merchant every 25s)
+PG_DSN=postgresql://payments:payments_secret@localhost:5432/payments \
+    python -m data_generator.live_postgres --rate 8 --batch 4 --merchant-every 25
+
+# or via compose (pipeline profile): the `data-generator` service
+GEN_RATE=8 GEN_BATCH=4 docker compose --profile pipeline up -d data-generator
 ```
 
 ### Throughput & memory notes (engineering honesty)
